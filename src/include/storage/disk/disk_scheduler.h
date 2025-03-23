@@ -25,6 +25,8 @@ namespace bustub {
  * @brief Represents a Write or Read request for the DiskManager to execute.
  */
 struct DiskRequest {
+
+  // we need a constructor to build a DiskRequest
   /** Flag indicating whether the request is a write or a read. */
   bool is_write_;
 

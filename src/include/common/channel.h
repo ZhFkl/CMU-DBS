@@ -16,6 +16,7 @@
 #include <mutex>               // NOLINT
 #include <queue>
 #include <utility>
+#include <iostream>
 
 namespace bustub {
 
@@ -44,12 +45,14 @@ class Channel {
    * @brief Gets an element from the shared queue. If the queue is empty, blocks until an element is available.
    */
   auto Get() -> T {
+ 
     std::unique_lock<std::mutex> lk(m_);
     cv_.wait(lk, [&]() { return !q_.empty(); });
+
     T element = std::move(q_.front());
     q_.pop();
     return element;
-  }
+}
 
  private:
   std::mutex m_;
