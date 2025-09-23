@@ -57,7 +57,8 @@ class BPlusTreePage {
   auto GetMaxSize() const -> int;
   void SetMaxSize(int max_size);
   auto GetMinSize() const -> int;
-
+  auto GetPageId() const -> page_id_t {return page_id_;}
+  page_id_t page_id_ ;
   /*
    * TODO(P2): Remove __attribute__((__unused__)) if you intend to use the fields.
    */

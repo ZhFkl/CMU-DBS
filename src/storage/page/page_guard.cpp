@@ -36,6 +36,11 @@ ReadPageGuard::ReadPageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> fra
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       disk_scheduler_(std::move(disk_scheduler)) ,is_valid_(true){
+         // printf("Create the read gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
+        frame_->rwlatch_.lock_shared();
+        frame_->pin_count_++;
+        replacer_->SetEvictable(frame_->frame_id_,false);
+        replacer_->RecordAccess(frame_->frame_id_);
 }
 
 /**
@@ -176,6 +181,7 @@ void ReadPageGuard::Drop() {
 
   frame_->pin_count_--;
   frame_->rwlatch_.unlock_shared();
+    //printf("Drop   read gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   if(frame_->pin_count_ == 0){
     replacer_->SetEvictable(frame_->frame_id_,true);
   } 
@@ -219,7 +225,13 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       replacer_(std::move(replacer)),
       bpm_latch_(std::move(bpm_latch)),
       disk_scheduler_(std::move(disk_scheduler)) ,is_valid_(true){
-        frame_->is_dirty_ = true;
+      //printf("page_id::%d and the frame_latch::%d\n",page_id_,frame_->frame_id_);
+      frame_->is_dirty_ = true;
+      frame_->rwlatch_.lock();
+      frame_->pin_count_++;
+      replacer_->SetEvictable(frame_->frame_id_,false);
+      replacer_->RecordAccess(frame_->frame_id_);
+       printf("Create write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
 }
 
 /**
@@ -251,6 +263,7 @@ WritePageGuard::WritePageGuard(WritePageGuard &&that) noexcept
     that.replacer_ = nullptr;
     that.bpm_latch_ = nullptr;
     that.disk_scheduler_ = nullptr;
+
 }
 
 /**
@@ -364,24 +377,26 @@ void WritePageGuard::Drop() {
     //printf("the droped page is invalid\n");
     return;
   }
-  bpm_latch_->lock();
+  printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   frame_->pin_count_--;
+    printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   frame_->rwlatch_.unlock();
+  printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   if(frame_->pin_count_ == 0){
     replacer_->SetEvictable(frame_->frame_id_,true);
   } 
+  printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   frame_ = nullptr;
   page_id_ = 0;
   replacer_ = nullptr;
   is_valid_ = false;
   disk_scheduler_ = nullptr;
-  bpm_latch_->unlock();
   bpm_latch_ = nullptr;
   return;
    UNIMPLEMENTED("TODO(P1): Add implementation."); 
   }
 
 /** @brief The destructor for `WritePageGuard`. This destructor simply calls `Drop()`. */
-WritePageGuard::~WritePageGuard() { Drop(); }
+WritePageGuard::~WritePageGuard() {Drop(); }
 
 }  // namespace bustub

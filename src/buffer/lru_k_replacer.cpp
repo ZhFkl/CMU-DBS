@@ -95,7 +95,7 @@ auto LRUKReplacer::Evict() -> std::optional<frame_id_t> {
  * @param access_type type of access that was received. This parameter is only needed for
  * leaderboard tests.
  */
-void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType access_type) {
+void LRUKReplacer::RecordAccess(frame_id_t frame_id) {
     std::lock_guard<std::mutex> guard(latch_);
     if(static_cast<size_t>(frame_id) >= replacer_size_){
         throw Exception(" Invalid frame ID");
@@ -107,7 +107,6 @@ void LRUKReplacer::RecordAccess(frame_id_t frame_id, [[maybe_unused]] AccessType
 
         // is this a way to creat the lruknode ? 
         node_store_[frame_id] =  LRUKNode{std::list<size_t>(),k_,frame_id,false};
-        
     }
     
     // if already have just update the timestamp

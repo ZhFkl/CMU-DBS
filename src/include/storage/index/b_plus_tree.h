@@ -75,6 +75,7 @@ INDEX_TEMPLATE_ARGUMENTS
 class BPlusTree {
   using InternalPage = BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator>;
   using LeafPage = BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>;
+  using  Iterator = IndexIterator<KeyType, ValueType, KeyComparator>;
 
  public:
   explicit BPlusTree(std::string name, page_id_t header_page_id, BufferPoolManager *buffer_pool_manager,
@@ -89,19 +90,57 @@ class BPlusTree {
 
   // Remove a key and its value from this B+ tree.
   void Remove(const KeyType &key);
+  auto RemoveHelper(page_id_t page_id,const KeyType &key) ->std::optional<std::pair<page_id_t,int>>;
+  
+  auto DeleteleafKey(LeafPage* leaf,const KeyType &key)->std::optional<std::pair<page_id_t,int>>;
+
+  auto HandleUnderflow(InternalPage *parent ,int child_idx)-> std::optional<std::pair<page_id_t, int>>;
+
+  auto MergeNodes(InternalPage *parent ,int child_idx)-> std::optional<std::pair<page_id_t, int>>;
+
+  auto RotateFromLeftLeaf(InternalPage *parent,LeafPage*left,LeafPage* current,int child_idx)->void;
+
+  auto RotateFromRightLeaf(InternalPage *parent,LeafPage*current,LeafPage* right,int child_idx)->void;
+
+  auto RotateFromLeftInternal(InternalPage *parent,InternalPage*left,InternalPage* current,int child_idx)->void;
+
+  auto RotateFromRightInternal(InternalPage *parent,InternalPage*current,InternalPage* right,int child_idx)->void;
+
 
   // Return the value associated with a given key
   auto GetValue(const KeyType &key, std::vector<ValueType> *result) -> bool;
 
+  // Search in the internal node 
+  auto SearchInternal(const page_id_t page_id,const KeyType &key,std::vector<ValueType> *result) -> bool;
+
+  //generator a Interalpage
+  auto Internal_generator() -> std::pair<InternalPage*,page_id_t>;
+
+  //generator a LeafPage
+  auto Leaf_generator() -> std::pair<LeafPage*,page_id_t>;
+
+  //add a insert helper function to insert
+  auto InsertHelper(const page_id_t page_id,const KeyType &key,const ValueType &value) ->std::optional<std::tuple<KeyType, page_id_t,page_id_t>>;
+  
+  //split the  node 
+  auto SplitLeaf( LeafPage *parent,const KeyType &key, const ValueType &value,int pos) -> std::tuple<KeyType,page_id_t,page_id_t>;
+
+  auto SplitInternal( InternalPage *parent,const KeyType &key, const page_id_t &left,const page_id_t &right,int pos)  ->std::tuple<KeyType,page_id_t,page_id_t>;
+
   // Return the page id of the root node
   auto GetRootPageId() -> page_id_t;
+  // test the concurrent function
+
 
   // Index iterator
   auto Begin() -> INDEXITERATOR_TYPE;
+  auto FindLeftMost(page_id_t page_id) -> LeafPage*;
 
   auto End() -> INDEXITERATOR_TYPE;
+  auto FindRightMost(page_id_t page_id) -> std::pair<LeafPage*,int> ;
 
   auto Begin(const KeyType &key) -> INDEXITERATOR_TYPE;
+  auto FindLeafPage(page_id_t page_id,const KeyType &key) -> std::optional<std::pair<LeafPage*,int>>;
 
   void Print(BufferPoolManager *bpm);
 
@@ -116,13 +155,15 @@ class BPlusTree {
   void RemoveFromFile(const std::filesystem::path &file_name);
 
   void BatchOpsFromFile(const std::filesystem::path &file_name);
-
  private:
   void ToGraph(page_id_t page_id, const BPlusTreePage *page, std::ofstream &out);
 
   void PrintTree(page_id_t page_id, const BPlusTreePage *page);
 
   auto ToPrintableBPlusTree(page_id_t root_id) -> PrintableBPlusTree;
+  
+  
+
 
   // member variable
   std::string index_name_;
@@ -132,6 +173,7 @@ class BPlusTree {
   int leaf_max_size_;
   int internal_max_size_;
   page_id_t header_page_id_;
+  page_id_t root_page_id_;
 };
 
 /**

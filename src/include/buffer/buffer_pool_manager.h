@@ -60,7 +60,6 @@ class FrameHeader {
   friend class BufferPoolManager;
   friend class ReadPageGuard;
   friend class WritePageGuard;
-
  public:
   explicit FrameHeader(frame_id_t frame_id);
 
@@ -127,6 +126,11 @@ class BufferPoolManager {
   void FlushAllPages();
   auto GetPinCount(page_id_t page_id) -> std::optional<size_t>;
   void update(frame_id_t frame_id,page_id_t page_id,AccessType accesstype);
+
+  void TrackWriteGuard( WritePageGuard  &&guard);
+  void ReleaseThreadGuards();
+
+
  private:
   /** @brief The number of frames in the buffer pool. */
   const size_t num_frames_;
@@ -156,6 +160,9 @@ class BufferPoolManager {
   /** @brief A pointer to the disk scheduler. Shared with the page guards for flushing. */
   std::shared_ptr<DiskScheduler> disk_scheduler_;
 
+  //for tracking the thread and the frameHeader
+  std::unordered_map<std::thread::id,std::vector<WritePageGuard>> thread_guard_map_;
+  mutable std::mutex map_mutex_;
   /**
    * @brief A pointer to the log manager.
    *

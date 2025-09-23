@@ -170,6 +170,7 @@ class WritePageGuard {
   auto IsDirty() const -> bool;
   void Flush();
   void Drop();
+  bool IsValid(){return is_valid_;}
   ~WritePageGuard();
 
  private:
