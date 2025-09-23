@@ -84,7 +84,7 @@ BufferPoolManager::BufferPoolManager(size_t num_frames, DiskManager *disk_manage
   frames_.reserve(num_frames_);
 
   // The page table should have exactly `num_frames_` slots, corresponding to exactly `num_frames_` frames.
-  page_table_.reserve(num_frames_);
+  page_table_.reserve(num_frames_* 2);
 
   // Initialize all of the frame headers, and fill the free frame list with all possible frame IDs (since all frames are
   // initially free).
@@ -163,12 +163,48 @@ auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
   disk_scheduler_->DeallocatePage(page_id);
   // deletePage in the frames 
   frame->Reset();
-  replacer_->Remove(page_id);
+  replacer_->Remove(frame_id);
   free_frames_.push_back(frame_id);
   page_table_.erase(page_id);
+  printf("the delete page id is %d\n",page_id);
   return true;
   UNIMPLEMENTED("TODO(P1): Add implementation.");
  }
+
+
+void BufferPoolManager::TrackWriteGuard(WritePageGuard  &&guard){
+    std::lock_guard<std::mutex> lock(*bpm_latch_);
+  std::lock_guard<std::mutex> m_lock(map_mutex_);
+  //get the thread id
+  auto tid = std::this_thread::get_id();
+  std::cout<<"IN track function   the thread   "<<tid <<"      track the frame      "<<guard.GetPageId()<<std::endl;
+  thread_guard_map_[tid].push_back(std::move(guard));
+}
+
+
+
+void BufferPoolManager::ReleaseThreadGuards(){
+  bpm_latch_->lock();
+  std::lock_guard<std::mutex> m_lock(map_mutex_);
+  auto tid = std::this_thread::get_id();
+  auto it = thread_guard_map_.find(tid);
+  if(it == thread_guard_map_.end()){
+    printf("can't find the thread_frame_track in the map\n");
+    bpm_latch_->unlock();
+    return;
+  }
+  for(auto & guard:it->second){
+    if(guard.IsValid()){
+      std::cout<<"in releasethreadframes we drop the guard:   "<<guard.GetPageId()<<std::endl;
+      guard.Drop();
+    }
+  }
+  it->second.clear();
+  thread_guard_map_.erase(it);
+  bpm_latch_->unlock();
+}
+
+
 
 /**
  * @brief Acquires an optional write-locked guard over a page of data. The user can specify an `AccessType` if needed.
@@ -220,10 +256,7 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
   if(page_table_.find(page_id) != page_table_.end()){
     frame_id_t frame_id = page_table_[page_id];
     auto &frame = frames_[frame_id];
-    replacer_->RecordAccess(frame_id,access_type);
-    frame->pin_count_++;
     bpm_latch_->unlock();
-    frame->rwlatch_.lock();
     return WritePageGuard(page_id, frame , replacer_,bpm_latch_, disk_scheduler_);
   }
   // the second condition
@@ -235,7 +268,6 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
     page_table_[page_id] = frame_id;
     auto &frame = frames_[frame_id];
     bpm_latch_->unlock();
-    frame->rwlatch_.lock();
     return WritePageGuard(page_id, frame , replacer_,bpm_latch_, disk_scheduler_);
   }
 
@@ -251,28 +283,31 @@ auto BufferPoolManager::CheckedWritePage(page_id_t page_id, AccessType access_ty
   for (auto it = page_table_.begin(); it != page_table_.end(); ) {
     if (it->second == frame_id) {
       if(frame->is_dirty_){
+        //printf("test the lock\n");
         bpm_latch_->unlock();
-        FlushPage(it->first);
+        bool flush_success = FlushPage(it->first);
+        if(!flush_success){
+         // printf("flush page failed in the writepage\n");
+          return std::nullopt;
+        }
+        bpm_latch_->lock();
+        //printf("test the lock success\n");
       }
         page_table_.erase(it); 
         page_table_[page_id] = frame_id;
         break;
     } else {
-        ++it; 
+        it++; 
     }
   }
   update(frame_id,page_id,access_type);
   bpm_latch_->unlock();
-  frame->rwlatch_.lock();
   return WritePageGuard(page_id, frame , replacer_,bpm_latch_, disk_scheduler_);
   UNIMPLEMENTED("TODO(P1): Add implementation.");
 }
 
 void BufferPoolManager::update(frame_id_t frame_id,page_id_t page_id,AccessType accesstype){
   auto &frame = frames_[frame_id];
-  replacer_->RecordAccess(frame_id,accesstype);
-  frame->pin_count_++;
-  replacer_->SetEvictable(frame_id,false);
   auto promise = disk_scheduler_->CreatePromise();
   auto future = promise.get_future();
   disk_scheduler_->Schedule({false,frame->GetDataMut(),page_id,std::move(promise)});
@@ -311,11 +346,7 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
   if(page_table_.find(page_id) != page_table_.end()){
     frame_id_t frame_id = page_table_[page_id];
     auto &frame = frames_[frame_id];
-    replacer_->RecordAccess(frame_id,access_type);
-    frame->pin_count_++;
-    replacer_->SetEvictable(frame_id,false);
-    bpm_latch_->unlock();
-    frame->rwlatch_.lock_shared();
+    bpm_latch_->unlock();;
     return ReadPageGuard(page_id, frame , replacer_,bpm_latch_, disk_scheduler_);
   }
   // the second condition
@@ -327,7 +358,6 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
     page_table_[page_id] = frame_id;
     auto &frame = frames_[frame_id];
     bpm_latch_->unlock();
-    frame->rwlatch_.lock_shared();
     return ReadPageGuard(page_id, frame , replacer_,bpm_latch_, disk_scheduler_);
   }
   // the third condition 
@@ -342,7 +372,12 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
     if (it->second == frame_id) {
       if(frame->is_dirty_){
         bpm_latch_->unlock();
-        FlushPage(it->first);
+        bool flush_success = FlushPage(it->first);
+        if(!flush_success){
+          printf("flush page failed in the readpage\n");
+          return std::nullopt;
+        }
+        bpm_latch_->lock();
       }
         page_table_.erase(it); 
         page_table_[page_id] = frame_id;
@@ -354,7 +389,6 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
   update(frame_id,page_id,access_type);
   //check if we need to take the lock at this time 
   bpm_latch_->unlock();
-  frame->rwlatch_.lock_shared();
   return ReadPageGuard(page_id, frame , replacer_,bpm_latch_, disk_scheduler_);
   UNIMPLEMENTED("TODO(P1): Add implementation.");
 }
@@ -374,6 +408,7 @@ auto BufferPoolManager::CheckedReadPage(page_id_t page_id, AccessType access_typ
  * @return WritePageGuard A page guard ensuring exclusive and mutable access to a page's data.
  */
 auto BufferPoolManager::WritePage(page_id_t page_id, AccessType access_type) -> WritePageGuard {
+  
   auto guard_opt = CheckedWritePage(page_id, access_type);
 
   if (!guard_opt.has_value()) {
@@ -466,7 +501,9 @@ auto BufferPoolManager::FlushPageUnsafe(page_id_t page_id) -> bool {
  * @return `false` if the page could not be found in the page table, otherwise `true`.
  */
 auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool { 
+ // printf("test the dead lock\n");
   std::lock_guard<std::mutex> lock(*bpm_latch_);
+   // printf("test the dead lock success\n");
   if(page_table_.find(page_id)==page_table_.end()){
     return false;
   }
@@ -476,10 +513,14 @@ auto BufferPoolManager::FlushPage(page_id_t page_id) -> bool {
     return true;
   }
   frame->rwlatch_.lock();
+  //printf("test the dead lock success\n");
   auto promise = disk_scheduler_->CreatePromise();
   auto future = promise.get_future();
   disk_scheduler_->Schedule({true,frame->GetDataMut(),page_id,std::move(promise)});
-  if(future.get()){
+  bool write_success = future.get();
+  if(!write_success){
+    frame->rwlatch_.unlock();
+    return false;
   }
   frame->is_dirty_ = false;
   frame->rwlatch_.unlock();

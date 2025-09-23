@@ -65,7 +65,7 @@ class LRUKReplacer {
 
   auto Evict() -> std::optional<frame_id_t>;
 
-  void RecordAccess(frame_id_t frame_id, AccessType access_type = AccessType::Unknown);
+  void RecordAccess(frame_id_t frame_id);
 
   void SetEvictable(frame_id_t frame_id, bool set_evictable);
 

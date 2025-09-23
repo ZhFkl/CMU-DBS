@@ -60,8 +60,15 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   // Helper methods
   auto GetNextPageId() const -> page_id_t;
   void SetNextPageId(page_id_t next_page_id);
-  auto KeyAt(int index) const -> KeyType;
 
+  auto GetPrevPageId() const -> page_id_t { return prev_page_id_; }
+  void SetPrevPageId(page_id_t prev_page_id) { prev_page_id_ = prev_page_id; }
+
+  auto KeyAt(int index)  const-> const KeyType &;
+  auto ValueAt(int index)  const-> const ValueType &;
+  // we need a  helper function to insert the pairs
+  auto Addpair(const KeyType &key,const ValueType &value,int insert_pos) ->bool;
+  auto Deletepair(int delete_pos)->bool;
   /**
    * @brief For test only return a string representing all keys in
    * this leaf page formatted as "(key1,key2,key3,...)"
@@ -89,6 +96,7 @@ class BPlusTreeLeafPage : public BPlusTreePage {
 
  private:
   page_id_t next_page_id_;
+  page_id_t prev_page_id_;
   // Array members for page data.
   KeyType key_array_[LEAF_PAGE_SLOT_CNT];
   ValueType rid_array_[LEAF_PAGE_SLOT_CNT];

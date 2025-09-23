@@ -63,7 +63,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto ValueIndex(const ValueType &value) const -> int;
 
   auto ValueAt(int index) const -> ValueType;
-
+  auto Addpair(const KeyType &key,const ValueType &left,const ValueType &right,int insert_pos) ->bool;
+  auto Deletepair(int delete_pos) ->bool;
   /**
    * @brief For test only, return a string representing all keys in
    * this internal page, formatted as "(key1,key2,key3,...)"

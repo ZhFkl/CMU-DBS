@@ -31,7 +31,13 @@ namespace bustub {
  * @param max_size Maximal size of the page
  */
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) { UNIMPLEMENTED("TODO(P2): Add implementation."); }
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) { 
+  SetPageType(bustub::IndexPageType::INTERNAL_PAGE);
+  SetSize(0);
+  SetMaxSize(max_size);
+  return;
+  UNIMPLEMENTED("TODO(P2): Add implementation.");
+ }
 
 /**
  * @brief Helper method to get/set the key associated with input "index"(a.k.a
@@ -42,6 +48,8 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Init(int max_size) { UNIMPLEMENTED("TODO(P2
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
+  std::cout << "In the Internal the key at " << index << " is " << key_array_[index] << std::endl;
+  return key_array_[index];
   UNIMPLEMENTED("TODO(P2): Add implementation.");
 }
 
@@ -53,6 +61,8 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::KeyAt(int index) const -> KeyType {
  */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
+  key_array_[index] = key;
+  return ;
   UNIMPLEMENTED("TODO(P2): Add implementation.");
 }
 
@@ -65,7 +75,43 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::SetKeyAt(int index, const KeyType &key) {
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueAt(int index) const -> ValueType {
+  return page_id_array_[index];
   UNIMPLEMENTED("TODO(P2): Add implementation.");
+}
+
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE:: Addpair(const KeyType &key,const ValueType &left,const ValueType &right,int insert_pos) ->bool{
+  //add the pair to the key_array and the rid_array and sort key  increasingly 
+  int size = GetSize();
+  for(int i = size + 1; i> insert_pos;i--){
+    key_array_[i] = key_array_[i-1];
+    page_id_array_[i] = page_id_array_[i-1];
+  }
+  key_array_[insert_pos] = key;
+  page_id_array_[insert_pos-1] = left;
+  page_id_array_[insert_pos] = right;
+  SetSize(size+1);
+  std::cout <<"Internal::add a new key at pos::  "<<insert_pos <<"the key is::   " << key << std::endl;
+  printf("The size is %d\n",size+1);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE:: Deletepair(int delete_pos) ->bool{
+  //add the pair to the key_array and the rid_array and sort key  increasingly 
+  int size = GetSize();
+  std::cout <<"Internal::delete a  key at pos::  "<<delete_pos <<"the key is::   " << key_array_[delete_pos] << std::endl;
+
+  for(int i = std::max(delete_pos,1); i< size;i++){
+    key_array_[i] = key_array_[i+1];
+  }
+  for(int i = delete_pos; i< size;i++){
+    page_id_array_[i] = page_id_array_[i+1];
+  }
+  SetSize(size - 1);
+  printf("The size is %d\n",size-1);
+  return true;
 }
 
 // valuetype for internalNode should be page id_t
