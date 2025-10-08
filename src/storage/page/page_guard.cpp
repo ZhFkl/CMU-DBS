@@ -231,7 +231,7 @@ WritePageGuard::WritePageGuard(page_id_t page_id, std::shared_ptr<FrameHeader> f
       frame_->pin_count_++;
       replacer_->SetEvictable(frame_->frame_id_,false);
       replacer_->RecordAccess(frame_->frame_id_);
-       printf("Create write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
+       //printf("Create write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
 }
 
 /**
@@ -377,15 +377,14 @@ void WritePageGuard::Drop() {
     //printf("the droped page is invalid\n");
     return;
   }
-  printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   frame_->pin_count_--;
     printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
   frame_->rwlatch_.unlock();
-  printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
+
   if(frame_->pin_count_ == 0){
     replacer_->SetEvictable(frame_->frame_id_,true);
   } 
-  printf("Drop   write gurad the page id is :%d, the frame_id is %d\n",page_id_,frame_->frame_id_);
+ 
   frame_ = nullptr;
   page_id_ = 0;
   replacer_ = nullptr;

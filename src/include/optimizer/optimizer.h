@@ -44,6 +44,10 @@ class Optimizer {
   auto OptimizeMergeFilterNLJ(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
   auto OptimizeNLJAsHashJoin(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
+  auto ExtractEquiJoinConditions(const AbstractExpressionRef &expr)
+ ->std::optional<std::pair<std::vector<AbstractExpressionRef>,std::vector<AbstractExpressionRef>>>;
+
+
 
   auto OptimizeNLJAsIndexJoin(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
@@ -67,7 +71,10 @@ class Optimizer {
 
   auto OptimizeSortLimitAsTopN(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 
+
   auto EstimatedCardinality(const std::string &table_name) -> std::optional<size_t>;
+
+  auto JudgeIndex(const AbstractExpressionRef &expr, uint32_t Index_key) -> std::vector<Value> ;
 
   /** Catalog will be used during the planning process. USERS SHOULD ENSURE IT OUTLIVES
    * OPTIMIZER, otherwise it's a dangling reference.

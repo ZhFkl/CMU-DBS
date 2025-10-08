@@ -50,7 +50,11 @@ class BoundExpression {
 
   auto IsInvalid() const -> bool { return type_ == ExpressionType::INVALID; }
 
-  virtual auto HasAggregation() const -> bool { UNREACHABLE("has aggregation should have been implemented!"); }
+  virtual auto HasAggregation() const -> bool {
+   
+    
+    
+    UNREACHABLE("has aggregation should have been implemented!"); }
 
   virtual auto HasWindowFunction() const -> bool { return false; }
 

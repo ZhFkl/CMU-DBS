@@ -48,7 +48,7 @@ auto FilterExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     if (!status) {
       return false;
     }
-
+    
     auto value = filter_expr->Evaluate(tuple, child_executor_->GetOutputSchema());
     if (!value.IsNull() && value.GetAs<bool>()) {
       return true;

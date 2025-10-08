@@ -395,11 +395,9 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key) {
   //printf("in the remove function\n");
   auto Header = guard.AsMut<BPlusTreeHeaderPage>();
   page_id_t root_page_id = Header->root_page_id_;
-  bpm_->TrackWriteGuard(std::move(guard));
   auto parent_result = RemoveHelper(root_page_id,key);
   //after remove this key we need to judge if the root is changed
   if(!parent_result.has_value()){
-    bpm_->ReleaseThreadGuards();
     return;
   }else{
     //this root is changed and we need to updata the root page id
@@ -440,14 +438,12 @@ auto BPLUSTREE_TYPE::RemoveHelper(page_id_t page_id,const KeyType &key) ->std::o
     // use for loop to find the pos
     auto *internal = guard.AsMut<InternalPage>();
     int size = internal->GetSize();
-    if(size>((internal_max_size + 1)/2))
     int child_idx = 0;
     for(child_idx =0; child_idx < size + 1;child_idx++){
       if(child_idx == size ||comparator_(key,internal->KeyAt(child_idx + 1)) < 0){
         break;
       }
     }
-    bpm_->TrackWriteGuard();
     auto child_result = RemoveHelper(internal->ValueAt(child_idx),key);
     if(!child_result.has_value()){
       return std::nullopt;
@@ -720,8 +716,12 @@ auto BPLUSTREE_TYPE::MergeNodes(InternalPage *parent, int child_idx)   -> std::o
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+auto BPLUSTREE_TYPE::Begin() -> std::optional<INDEXITERATOR_TYPE> {
+  if(IsEmpty()){
+    return  std::nullopt;
+  }
   page_id_t root_page_id = GetRootPageId();
+  
   auto  begin = FindLeftMost(root_page_id);
   return Iterator(begin,0,bpm_);
    UNIMPLEMENTED("TODO(P2): Add implementation."); }
@@ -746,13 +746,18 @@ auto BPLUSTREE_TYPE::FindLeftMost(page_id_t page_id) -> LeafPage* {
  * first, then construct index iterator
  * @return : index iterator
  */
+
+
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> std::optional<INDEXITERATOR_TYPE> {
+  if(IsEmpty()){
+    return std::nullopt;
+  }
   page_id_t root_page_id = GetRootPageId();
   auto page = FindLeafPage(root_page_id,key);
-  /*if(!page.has_value()){
-    return NULL;
-  }*/
+  if(!page.has_value()){
+    return End();
+  }
     auto [begin,index] = page.value();
     return Iterator(begin,index,bpm_);
    UNIMPLEMENTED("TODO(P2): Add implementation."); 
@@ -791,7 +796,10 @@ auto BPLUSTREE_TYPE::FindLeafPage(page_id_t page_id,const KeyType &key) -> std::
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE {
+auto BPLUSTREE_TYPE::End() -> std::optional<INDEXITERATOR_TYPE> {
+  if(IsEmpty()){
+    return std::nullopt;
+  }
   page_id_t root_page_id = GetRootPageId();
   auto [end,index] = FindRightMost(root_page_id);
   std::cout<<end->GetNextPageId()<<" the end index is "<<index<<std::endl;

@@ -27,6 +27,8 @@ namespace bustub {
  */
 auto Optimizer::OptimizeMergeFilterScan(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef {
   std::vector<AbstractPlanNodeRef> children;
+  std::cout<<plan->ToString()<<std::endl;
+  //find all the child plan node to do optimization
   for (const auto &child : plan->GetChildren()) {
     children.emplace_back(OptimizeMergeFilterScan(child));
   }

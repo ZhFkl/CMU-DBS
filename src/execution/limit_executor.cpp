@@ -23,12 +23,19 @@ namespace bustub {
  */
 LimitExecutor::LimitExecutor(ExecutorContext *exec_ctx, const LimitPlanNode *plan,
                              std::unique_ptr<AbstractExecutor> &&child_executor)
-    : AbstractExecutor(exec_ctx) {
-  UNIMPLEMENTED("TODO(P3): Add implementation.");
+    : AbstractExecutor(exec_ctx),plan_(std::move(plan)),child_(std::move(child_executor))
+    {
+  //UNIMPLEMENTED("TODO(P3): Add implementation.");
 }
 
 /** Initialize the limit */
-void LimitExecutor::Init() { UNIMPLEMENTED("TODO(P3): Add implementation."); }
+void LimitExecutor::Init() { 
+  child_->Init();
+  limit_ = plan_->GetLimit();
+  nums = 0;
+ // UNIMPLEMENTED("TODO(P3): Add implementation."); 
+
+}
 
 /**
  * Yield the next tuple from the limit.
@@ -36,6 +43,23 @@ void LimitExecutor::Init() { UNIMPLEMENTED("TODO(P3): Add implementation."); }
  * @param[out] rid The next tuple RID produced by the limit
  * @return `true` if a tuple was produced, `false` if there are no more tuples
  */
-auto LimitExecutor::Next(Tuple *tuple, RID *rid) -> bool { UNIMPLEMENTED("TODO(P3): Add implementation."); }
+auto LimitExecutor::Next(Tuple *tuple, RID *rid) -> bool { 
+  while(true){
+    Tuple child_tuple;
+    RID child_rid;
+    if(nums < limit_ &&child_->Next(&child_tuple,&child_rid))
+    {
+      *tuple = child_tuple;
+      nums++;
+      return true;
+    }
+    return false;
+  }
+  
+  
+  
+  
+  
+  UNIMPLEMENTED("TODO(P3): Add implementation."); }
 
 }  // namespace bustub

@@ -143,18 +143,18 @@ auto Tuple::ToString(const Schema *schema) const -> std::string {
  * serialize tuple data
  */
 void Tuple::SerializeTo(char *storage) const {
-  int32_t sz = data_.size();
-  memcpy(storage, &sz, sizeof(int32_t));
-  memcpy(storage + sizeof(int32_t), data_.data(), sz);
+  uint32_t sz = static_cast<uint32_t>(data_.size());
+  memcpy(storage, &sz, sizeof(uint32_t));
+  memcpy(storage + sizeof(uint32_t), data_.data(), sz);
+
+
 }
 
-/**
- * deserialize tuple data(deep copy)
- */
 void Tuple::DeserializeFrom(const char *storage) {
   uint32_t size = *reinterpret_cast<const uint32_t *>(storage);
   this->data_.resize(size);
-  memcpy(this->data_.data(), storage + sizeof(int32_t), size);
+  memcpy(this->data_.data(), storage + sizeof(uint32_t), size);
+
 }
 
 }  // namespace bustub

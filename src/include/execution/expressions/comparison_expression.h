@@ -22,6 +22,7 @@
 #include "storage/table/tuple.h"
 #include "type/value_factory.h"
 
+
 namespace bustub {
 
 /** ComparisonType represents the type of comparison that we want to perform. */

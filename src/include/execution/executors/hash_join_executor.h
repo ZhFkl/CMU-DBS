@@ -18,6 +18,8 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/hash_join_plan.h"
 #include "storage/table/tuple.h"
+#include "execution/plans/aggregation_plan.h"
+#include "execution/plans/hash_join_plan.h"
 
 namespace bustub {
 
@@ -35,10 +37,16 @@ class HashJoinExecutor : public AbstractExecutor {
 
   /** @return The output schema for the join */
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); };
-
+  auto CombineTuple(const Tuple* left_tuple,const Tuple* right_tuple,bool IsNull) ->Tuple;
  private:
   /** The HashJoin plan node to be executed. */
   const HashJoinPlanNode *plan_;
+  std::unique_ptr<AbstractExecutor> left_child_;
+  std::unique_ptr<AbstractExecutor> right_child_;
+  AbstractPlanNodeRef left_plan;
+  AbstractPlanNodeRef right_plan;
+  std::unordered_map<HashKey,std::vector<Tuple>> ht_;
+  std::queue<Tuple> match_queue_;
 };
 
 }  // namespace bustub

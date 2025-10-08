@@ -9,7 +9,7 @@
 // Copyright (c) 2015-2025, Carnegie Mellon University Database Group
 //
 //===----------------------------------------------------------------------===//
-
+#include <unistd.h>
 #include <cstdio>
 #include <fstream>
 #include <ios>
@@ -232,6 +232,12 @@ auto ProcessExtraOptions(const std::string &sql, bustub::BusTubInstance &instanc
 }
 
 auto main(int argc, char **argv) -> int {  // NOLINT
+
+char cwd[1024];
+  if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+    std::cerr << "当前工作目录: " << cwd << std::endl;
+  }
+
   argparse::ArgumentParser program("bustub-sqllogictest");
   program.add_argument("file").help("the sqllogictest file to run");
   program.add_argument("--verbose").help("increase output verbosity").default_value(false).implicit_value(true);

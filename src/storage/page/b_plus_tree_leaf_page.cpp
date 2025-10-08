@@ -63,7 +63,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) {
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index)  const-> const KeyType & {
   //first of all we need to judge if the index is out of range  
-  std::cout << "In the leaf the key at " << index << " is " << key_array_[index] << std::endl;
+ // std::cout << "In the leaf the key at " << index << " is " << key_array_[index] << std::endl;
   return key_array_[index];
   UNIMPLEMENTED("TODO(P2): Add implementation."); 
 }

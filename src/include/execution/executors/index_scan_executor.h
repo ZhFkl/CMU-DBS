@@ -17,7 +17,8 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/index_scan_plan.h"
 #include "storage/table/tuple.h"
-
+#include "execution/expressions/constant_value_expression.h"
+#include "storage/index/index_iterator.h"
 namespace bustub {
 
 /**
@@ -37,5 +38,15 @@ class IndexScanExecutor : public AbstractExecutor {
  private:
   /** The index scan plan node to be executed. */
   const IndexScanPlanNode *plan_;
+  std::shared_ptr<TableInfo> table_info_;
+  std::shared_ptr<IndexInfo> index_info_;
+  std::unique_ptr<Index> index_;
+  BPlusTreeIndexForTwoIntegerColumn *tree_;
+  std::vector<Value> keys;
+  bool is_full_scan =false;
+  std::vector<RID> point_scan_rids_;
+  size_t point_scan_idx_ = 0;
+  std::optional<BPlusTreeIndexIteratorForTwoIntegerColumn> iter_;
+  //IndexIterator<IntegerKeyType_BTree, IntegerValueType_BTree, IntegerComparatorType_BTree> iter_;
 };
 }  // namespace bustub

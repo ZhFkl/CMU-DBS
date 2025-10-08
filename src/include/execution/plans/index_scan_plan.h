@@ -75,7 +75,7 @@ class IndexScanPlanNode : public AbstractPlanNode {
       return fmt::format("IndexScan {{ index_oid={}, filter={} }}", index_oid_, filter_predicate_);
     }
     return fmt::format("IndexScan {{ index_oid={} }}", index_oid_);
-  }
+}
 };
 
 }  // namespace bustub

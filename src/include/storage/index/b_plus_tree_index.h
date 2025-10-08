@@ -36,11 +36,11 @@ class BPlusTreeIndex : public Index {
 
   void ScanKey(const Tuple &key, std::vector<RID> *result, Transaction *transaction) override;
 
-  auto GetBeginIterator() -> INDEXITERATOR_TYPE;
+  auto GetBeginIterator() -> std::optional<INDEXITERATOR_TYPE>;
 
-  auto GetBeginIterator(const KeyType &key) -> INDEXITERATOR_TYPE;
+  auto GetBeginIterator(const KeyType &key) -> std::optional<INDEXITERATOR_TYPE>;
 
-  auto GetEndIterator() -> INDEXITERATOR_TYPE;
+  auto GetEndIterator() -> std::optional<INDEXITERATOR_TYPE>;
 
  protected:
   // comparator for key
