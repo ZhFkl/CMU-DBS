@@ -12,7 +12,7 @@
 
 #include "execution/executors/seq_scan_executor.h"
 #include "common/macros.h"
-
+#include <optional>
 namespace bustub {
 
 /**
@@ -20,12 +20,20 @@ namespace bustub {
  * @param exec_ctx The executor context
  * @param plan The sequential scan plan to be executed
  */
-SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan) : AbstractExecutor(exec_ctx) {
-  UNIMPLEMENTED("TODO(P3): Add implementation.");
+SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNode *plan) : AbstractExecutor(exec_ctx) ,plan_(plan),table_info_(nullptr) {
+  //UNIMPLEMENTED("TODO(P3): Add implementation.");
 }
 
 /** Initialize the sequential scan */
-void SeqScanExecutor::Init() { UNIMPLEMENTED("TODO(P3): Add implementation."); }
+void SeqScanExecutor::Init() {
+  table_oid_t oid = plan_->GetTableOid();
+  Catalog *catalog = exec_ctx_->GetCatalog();
+  table_info_  = catalog->GetTable(oid);
+  BUSTUB_ASSERT(table_info_ != nullptr, "Table not found in catalog");
+  iter_ = table_info_->table_->MakeIterator();
+  
+   //UNIMPLEMENTED("TODO(P3): Add implementation."); 
+  }
 
 /**
  * Yield the next tuple from the sequential scan.
@@ -33,6 +41,41 @@ void SeqScanExecutor::Init() { UNIMPLEMENTED("TODO(P3): Add implementation."); }
  * @param[out] rid The next tuple RID produced by the scan
  * @return `true` if a tuple was produced, `false` if there are no more tuples
  */
-auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool { UNIMPLEMENTED("TODO(P3): Add implementation."); }
+auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
+    // judge if the iterator is end
+    if(iter_->IsEnd()){
+      return false;
+    }
+    //through a loop to find the next valid tuple
+    while(!iter_->IsEnd()){ 
+      auto [meta, cur_tuple] = (*iter_).GetTuple();
+      if(meta.is_deleted_){
+        ++(*iter_);
+        continue;
+      }
+      
+      AbstractExpressionRef predicate = plan_->filter_predicate_;
+      bool is_match = false;
+      if(predicate != nullptr){
+          Value val = predicate->Evaluate(&cur_tuple, table_info_->schema_);
+          is_match = val.GetAs<bool>();
+      }else{
+          is_match = true;
+      }
+      
+      if(is_match){
+          *tuple = cur_tuple;
+          *rid = cur_tuple.GetRid();
+          ++(*iter_);
+          return true;
+      }
+
+      
+      ++(*iter_);
+    }
+    return false;
+      UNIMPLEMENTED("TODO(P3): Add implementation."); 
+  }
+
 
 }  // namespace bustub

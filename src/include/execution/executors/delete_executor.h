@@ -42,7 +42,9 @@ class DeleteExecutor : public AbstractExecutor {
  private:
   /** The delete plan node to be executed */
   const DeletePlanNode *plan_;
-
+  std::shared_ptr<TableInfo> table_info_;
+  std::vector<std::shared_ptr<IndexInfo>> index_info;
+  bool no_more_tuples = false;
   /** The child executor from which RIDs for deleted tuples are pulled */
   std::unique_ptr<AbstractExecutor> child_executor_;
 };

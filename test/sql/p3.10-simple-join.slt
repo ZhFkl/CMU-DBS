@@ -3,6 +3,9 @@
 # Show office hours on lecture days
 # "rowsort" means that the order of result doesn't matter.
 
+
+
+
 statement ok
 set force_optimizer_starter_rule=yes
 
@@ -15,6 +18,7 @@ select * from
 ChrisLaspias Wednesday Wednesday 1
 carpecodeum Monday Monday 1
 rmboyce Monday Monday 1
+
 
 # The real test begins...
 

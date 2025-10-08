@@ -274,6 +274,7 @@ auto BusTubInstance::ExecuteSql(const std::string &sql, ResultWriter &writer,
  */
 auto BusTubInstance::ExecuteSqlTxn(const std::string &sql, ResultWriter &writer, Transaction *txn,
                                    std::shared_ptr<CheckOptions> check_options) -> bool {
+  printf("[SQL] %s\n", sql.c_str());
   if (!sql.empty() && sql[0] == '\\') {
     // Internal meta-commands, like in `psql`.
     if (sql == "\\dt") {
@@ -360,7 +361,7 @@ auto BusTubInstance::ExecuteSqlTxn(const std::string &sql, ResultWriter &writer,
     // Optimize the query.
     bustub::Optimizer optimizer(*catalog_, IsForceStarterRule());
     auto optimized_plan = optimizer.Optimize(planner.plan_);
-
+    std::cout<<optimized_plan->ToString()<<std::endl;
     l.unlock();
 
     // Execute the query.

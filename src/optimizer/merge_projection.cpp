@@ -32,7 +32,6 @@ auto Optimizer::OptimizeMergeProjection(const AbstractPlanNodeRef &plan) -> Abst
     children.emplace_back(OptimizeMergeProjection(child));
   }
   auto optimized_plan = plan->CloneWithChildren(std::move(children));
-
   if (optimized_plan->GetType() == PlanType::Projection) {
     const auto &projection_plan = dynamic_cast<const ProjectionPlanNode &>(*optimized_plan);
     // Has exactly one child

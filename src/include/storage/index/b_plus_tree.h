@@ -133,13 +133,15 @@ class BPlusTree {
 
 
   // Index iterator
-  auto Begin() -> INDEXITERATOR_TYPE;
+  auto Begin() -> std::optional<INDEXITERATOR_TYPE>;
+
+
   auto FindLeftMost(page_id_t page_id) -> LeafPage*;
 
-  auto End() -> INDEXITERATOR_TYPE;
+  auto End() -> std::optional<INDEXITERATOR_TYPE>;
   auto FindRightMost(page_id_t page_id) -> std::pair<LeafPage*,int> ;
 
-  auto Begin(const KeyType &key) -> INDEXITERATOR_TYPE;
+  auto Begin(const KeyType &key) -> std::optional<INDEXITERATOR_TYPE>;
   auto FindLeafPage(page_id_t page_id,const KeyType &key) -> std::optional<std::pair<LeafPage*,int>>;
 
   void Print(BufferPoolManager *bpm);

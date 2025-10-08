@@ -23,7 +23,24 @@ namespace bustub {
 TupleComparator::TupleComparator(std::vector<OrderBy> order_bys) : order_bys_(std::move(order_bys)) {}
 
 /** TODO(P3): Implement the comparison method */
-auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entry_b) const -> bool { return false; }
+auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entry_b) const -> bool { 
+  
+
+  // achieve a way to compare the two  operator
+  for(size_t i = 0; i < order_bys_.size();i++){
+    auto val_a = entry_a.first[i];
+    auto val_b = entry_b.first[i];
+    auto order = order_bys_[i];
+    //
+    auto compare_result = val_a.CompareLessThan(val_b);
+    auto notequal = val_a.CompareNotEquals(val_b);
+    if(notequal == CmpBool::CmpTrue){
+      return (order.first == OrderByType::ASC||order.first == OrderByType::DEFAULT)? (compare_result == CmpBool::CmpTrue):(compare_result == CmpBool::CmpFalse);
+    }
+  }
+//which means the two tuples are exactly the same 
+  return false; 
+}
 
 /**
  * Generate sort key for a tuple based on the order by expressions.
@@ -31,7 +48,16 @@ auto TupleComparator::operator()(const SortEntry &entry_a, const SortEntry &entr
  * TODO(P3): Implement this method.
  */
 auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, const Schema &schema) -> SortKey {
-  return {};
+
+  std::vector<Value> vals;
+  for(const auto &order: order_bys){
+    Value val = order.second->Evaluate(&tuple,schema);
+    if(val.IsNull()){
+      printf("the val is null\n");
+    }
+    vals.push_back(val);
+  }
+  return {vals};
 }
 
 /**

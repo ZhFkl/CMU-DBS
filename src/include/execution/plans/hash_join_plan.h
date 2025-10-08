@@ -19,7 +19,9 @@
 #include "binder/table_ref/bound_join_ref.h"
 #include "execution/expressions/abstract_expression.h"
 #include "execution/plans/abstract_plan.h"
-
+#include "execution/expressions/comparison_expression.h"
+#include "type/type.h"
+#include "common/util/hash_util.h"
 namespace bustub {
 
 /**
@@ -80,4 +82,32 @@ class HashJoinPlanNode : public AbstractPlanNode {
   auto PlanNodeToString() const -> std::string override;
 };
 
+
+struct HashKey{
+  std::vector<Value> key_values_;
+  auto operator==(const HashKey &other) const ->bool{
+    for(uint32_t i = 0;i < other.key_values_.size();i++){
+      if(key_values_[i].CompareEquals(other.key_values_[i]) != CmpBool::CmpTrue){
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
 }  // namespace bustub
+
+namespace std{
+template <>
+struct hash<bustub::HashKey>{
+  auto operator()( const bustub::HashKey &hash_key) const -> std::size_t{
+    size_t curr_hash = 0;
+    for(const auto &key :hash_key.key_values_){
+      if(!key.IsNull()){
+        curr_hash = bustub::HashUtil::CombineHashes(curr_hash,bustub::HashUtil::HashValue(&key));
+      }
+    }
+    return curr_hash;
+  }
+};
+}
