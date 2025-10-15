@@ -47,25 +47,36 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
       return false;
     }
     //through a loop to find the next valid tuple
+    TransactionManager* txn_mgr = exec_ctx_->GetTransactionManager();
     while(!iter_->IsEnd()){ 
       auto [meta, cur_tuple] = (*iter_).GetTuple();
-      if(meta.is_deleted_){
+      RID tuple_rid = cur_tuple.GetRid();
+      auto undolink = txn_mgr->GetUndoLink(tuple_rid);
+      Transaction* txn = exec_ctx_->GetTransaction();
+      auto undologs = CollectUndoLogs(cur_tuple.GetRid(),meta,cur_tuple,undolink,txn,txn_mgr);
+      //first we need to reconstruct the tuple
+      if(!undologs.has_value()){
         ++(*iter_);
         continue;
       }
-      
+      auto tuple_ = ReconstructTuple(&plan_->OutputSchema(),cur_tuple,meta,undologs.value());  
+      if(!tuple_.has_value()){
+        ++(*iter_);
+        continue;
+      }    
+      Tuple cur_tuple_ = tuple_.value();
       AbstractExpressionRef predicate = plan_->filter_predicate_;
       bool is_match = false;
       if(predicate != nullptr){
-          Value val = predicate->Evaluate(&cur_tuple, table_info_->schema_);
+          Value val = predicate->Evaluate(&cur_tuple_, table_info_->schema_);
           is_match = val.GetAs<bool>();
       }else{
           is_match = true;
       }
       
       if(is_match){
-          *tuple = cur_tuple;
-          *rid = cur_tuple.GetRid();
+          *tuple = cur_tuple_;
+          *rid = tuple_rid;
           ++(*iter_);
           return true;
       }

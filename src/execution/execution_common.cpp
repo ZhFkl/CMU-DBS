@@ -78,7 +78,41 @@ auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, 
  */
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  UNIMPLEMENTED("not implemented");
+    // first of all check out 
+    std::vector<Value> tuple_val;
+    bool is_delete = base_meta.is_deleted_;
+    for(size_t i = 0 ; i < schema->GetColumnCount();i++){
+      tuple_val.push_back(base_tuple.GetValue(schema,i));
+    }
+    for(auto log : undo_logs){
+      // roll back 
+      std::vector<Column> unlog_schema;
+      for(size_t i = 0; i < schema->GetColumnCount();i++){
+        if(log.modified_fields_[i]){
+          // which means the data is changed so we need to get the scheam
+          unlog_schema.push_back(schema->GetColumn(i));
+        }
+      }
+      Schema unlog_schema_(unlog_schema);
+      // since we have the schema then we need to update the value
+      // if a data is deleted then we just roll back ?
+
+      // updata the data of the tuple 
+      uint32_t pos = 0;
+      for(size_t i = 0; i< schema->GetColumnCount();i++){
+        if(log.modified_fields_[i]){
+          tuple_val[i] = log.tuple_.GetValue(&unlog_schema_,pos++);
+        }
+      }
+      is_delete = log.is_deleted_;
+    }
+    if(is_delete){
+      return std::nullopt;
+    }
+    return Tuple(tuple_val,schema);
+
+
+  
 }
 
 /**
@@ -95,8 +129,73 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
  */
 auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tuple, std::optional<UndoLink> undo_link,
                      Transaction *txn, TransactionManager *txn_mgr) -> std::optional<std::vector<UndoLog>> {
+  
+  
+  
+  //check if the base_meta is modifing but not commit
+  std::vector<UndoLog> logs;
+  // i need to judge if the tuple has been modified but not commit
+  // if it is this kind of condition we need to check if it was modified by this txn if it is , then we can see it 
+  // else we can't see if we , we need to roll back 
+  if(base_meta.ts_  <= txn->GetReadTs() || base_meta.ts_ == txn->GetTransactionId()){
+    // if the metats is smaller than the readts ,which means the tuple don't need to roll back 
+    // else we need to roll back to find the lateset commit unlog array
+    // else if the meta is modified by the txn then we can see it else we can't see is 
+    // which means the commit_ts is smaller than my read so  we don't need to retrive 
+    // the data of the tuple, we just return the base_meta;
+    return logs;
+  }
+  // which means the ts is larger than my readts
+  if(!undo_link.has_value()){
+    return std::nullopt;
+  }
+  auto map = txn_mgr->txn_map_;
+  UndoLink link= undo_link.value();
+  // the link is the newest link for the tuple
+  auto txn_id = link.prev_txn_;
+  auto log_idx = link.prev_log_idx_;
+
+  // find the prev unlog 
+  if(map.find(txn_id) == map.end()){
+    printf("can't find the txn in the map\n");
+  }
+  auto txn_ = map[txn_id];
+  UndoLog log = txn_->GetUndoLog(log_idx);
+  while(log.prev_version_.IsValid()){
+    if(log.ts_ <= txn->GetReadTs()){
+      //judge if the 
+      if(!logs.empty()){
+        auto log_ = logs.back();
+        if(log_.ts_ > log.ts_){
+          break;
+        }
+      }
+      logs.push_back(log);
+    }
+    // get the link and get the next log
+    txn_ = map[log.prev_version_.prev_txn_];
+    log = txn_->GetUndoLog(log.prev_version_.prev_log_idx_);
+  }
+
+  // the last log 
+  if(log.ts_<= txn->GetReadTs()){
+    if(!logs.empty()){
+        auto log_ = logs.back();
+        if(log.ts_ == log_.ts_){
+          logs.push_back(log);
+        }
+    }else{
+      logs.push_back(log);
+    }
+  }
+  if(logs.empty()){
+    return std::nullopt;
+  }
+  return logs;
+
   UNIMPLEMENTED("not implemented");
 }
+
 
 /**
  * @brief Generates a new undo log as the transaction tries to modify this tuple at the first time.

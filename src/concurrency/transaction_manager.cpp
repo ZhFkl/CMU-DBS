@@ -48,7 +48,7 @@ auto TransactionManager::Begin(IsolationLevel isolation_level) -> Transaction * 
   txn_map_.insert(std::make_pair(txn_id, std::move(txn)));
 
   // TODO(fall2023): set the timestamps here. Watermark updated below.
-
+  txn_ref->read_ts_ = last_commit_ts_.load();
   running_txns_.AddTxn(txn_ref->read_ts_);
   return txn_ref;
 }
@@ -66,7 +66,7 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   std::unique_lock<std::mutex> commit_lck(commit_mutex_);
 
   // TODO(fall2023): acquire commit ts!
-
+  
   if (txn->state_ != TransactionState::RUNNING) {
     throw Exception("txn not in running state");
   }
@@ -84,7 +84,7 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
 
   // TODO(fall2023): set commit timestamp + update last committed timestamp here.
-
+  txn->commit_ts_ = ++last_commit_ts_;
   txn->state_ = TransactionState::COMMITTED;
   running_txns_.UpdateCommitTs(txn->commit_ts_);
   running_txns_.RemoveTxn(txn->read_ts_);
@@ -97,6 +97,8 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
  * @param txn the transaction to abort, the txn will be managed by the txn manager so no need to delete it by yourself
  */
 void TransactionManager::Abort(Transaction *txn) {
+
+
   if (txn->state_ != TransactionState::RUNNING && txn->state_ != TransactionState::TAINTED) {
     throw Exception("txn not in running / tainted state");
   }
@@ -110,6 +112,13 @@ void TransactionManager::Abort(Transaction *txn) {
 
 /** @brief Stop-the-world garbage collection. Will be called only when all transactions are not accessing the table
  * heap. */
-void TransactionManager::GarbageCollection() { UNIMPLEMENTED("not implemented"); }
+void TransactionManager::GarbageCollection() {
+  
+  
+  
+  UNIMPLEMENTED("not implemented"); 
+
+
+}
 
 }  // namespace bustub

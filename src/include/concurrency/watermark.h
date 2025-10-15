@@ -16,6 +16,7 @@
 
 #include "concurrency/transaction.h"
 #include "storage/table/tuple.h"
+#include <map>
 
 namespace bustub {
 
@@ -35,6 +36,7 @@ class Watermark {
    * correctly. */
   auto UpdateCommitTs(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
 
+  // the watermark_ return the latest read_ts and all the ts before the read_ts can be deleted 
   auto GetWatermark() -> timestamp_t {
     if (current_reads_.empty()) {
       return commit_ts_;
@@ -46,7 +48,7 @@ class Watermark {
 
   timestamp_t watermark_;
 
-  std::unordered_map<timestamp_t, int> current_reads_;
+  std::map<timestamp_t, int> current_reads_;
 };
 
 };  // namespace bustub
