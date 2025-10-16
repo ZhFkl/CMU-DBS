@@ -120,7 +120,7 @@ class Transaction {
   inline auto GetCommitTs() const -> timestamp_t { return commit_ts_; }
 
   /** Modify an existing undo log. */
-  inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
+inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
     std::scoped_lock<std::mutex> lck(latch_);
     undo_logs_[log_idx] = std::move(new_log);
   }

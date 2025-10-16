@@ -47,8 +47,7 @@ class RID {
 
   inline auto ToString() const -> std::string {
     std::stringstream os;
-    os << "page_id: " << page_id_;
-    os << " slot_num: " << slot_num_ << "\n";
+    os <<"RID="<< page_id_<<"/ "<<slot_num_;
 
     return os.str();
   }

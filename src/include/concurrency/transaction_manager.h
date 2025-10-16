@@ -74,6 +74,7 @@ class TransactionManager {
   };
 
   /** protects version info */
+  // which is the modified mutex 
   std::shared_mutex version_info_mutex_;
   /** Stores the previous version of each tuple in the table heap. Do not directly access this field. Use the helper
    * functions in `transaction_manager_impl.cpp`. */

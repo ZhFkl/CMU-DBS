@@ -17,6 +17,7 @@
 #include "concurrency/transaction_manager.h"
 #include "fmt/core.h"
 #include "storage/table/table_heap.h"
+#include "type/value_factory.h"
 
 namespace bustub {
 
@@ -152,16 +153,8 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
   auto map = txn_mgr->txn_map_;
   UndoLink link= undo_link.value();
   // the link is the newest link for the tuple
-  auto txn_id = link.prev_txn_;
-  auto log_idx = link.prev_log_idx_;
-
-  // find the prev unlog 
-  if(map.find(txn_id) == map.end()){
-    printf("can't find the txn in the map\n");
-  }
-  auto txn_ = map[txn_id];
-  UndoLog log = txn_->GetUndoLog(log_idx);
-  while(log.prev_version_.IsValid()){
+  while(link.IsValid()){
+    UndoLog log = txn_mgr->GetUndoLog(link);
     if(log.ts_ <= txn->GetReadTs()){
       //judge if the 
       if(!logs.empty()){
@@ -173,20 +166,7 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
       logs.push_back(log);
     }
     // get the link and get the next log
-    txn_ = map[log.prev_version_.prev_txn_];
-    log = txn_->GetUndoLog(log.prev_version_.prev_log_idx_);
-  }
-
-  // the last log 
-  if(log.ts_<= txn->GetReadTs()){
-    if(!logs.empty()){
-        auto log_ = logs.back();
-        if(log.ts_ == log_.ts_){
-          logs.push_back(log);
-        }
-    }else{
-      logs.push_back(log);
-    }
+    link = log.prev_version_;
   }
   if(logs.empty()){
     return std::nullopt;
@@ -210,6 +190,33 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
  */
 auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple, timestamp_t ts,
                         UndoLink prev_version) -> UndoLog {
+
+
+// compare the data that has been modified 
+
+std::vector<Value> modif_val;
+std::vector<bool> modif_arr;
+std::vector<Column> modif_schema;
+if(target_tuple == nullptr){
+  modif_arr.resize(schema->GetColumnCount(),true);
+  return UndoLog{false,modif_arr,*base_tuple,ts,prev_version};
+}
+for(size_t i = 0; i < schema->GetColumnCount();i++){
+  auto old_val = base_tuple->GetValue(schema,i);
+  auto new_val = target_tuple->GetValue(schema,i);
+  if(new_val.CompareExactlyEquals(old_val)){
+    modif_arr.push_back(false);
+    continue;
+  }
+  modif_val.push_back(old_val);
+  modif_arr.push_back(true);
+  modif_schema.push_back(schema->GetColumn(i));
+}
+Schema schema_(modif_schema);
+return UndoLog{false,modif_arr,Tuple(modif_val,&schema_),ts,prev_version};
+
+
+
   UNIMPLEMENTED("not implemented");
 }
 
@@ -225,14 +232,120 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
  */
 auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple,
                             const UndoLog &log) -> UndoLog {
+  if(IsTupleContentEqual(*base_tuple,*target_tuple)){
+    return log;
+  }
+  //not only compare the 
+  std::vector<Value> modif_val;
+  std::vector<bool> modif_arr;
+  std::vector<Column> modif_schema;
+  auto log_schema = GetUnlogSchema(schema,log);
+  for(size_t i = 0 ; i < schema->GetColumnCount();i++){
+    bool is_equal = false;
+    auto old_val = base_tuple->GetValue(schema,i);
+    auto new_val = target_tuple->GetValue(schema,i);
+    if((is_equal = new_val.CompareExactlyEquals(old_val))){
+      modif_arr.push_back((log.modified_fields_[i] || !is_equal));
+      if(log.modified_fields_[i]){
+        modif_val.push_back(log.tuple_.GetValue(&log_schema,i));
+        modif_schema.push_back(schema->GetColumn(i));
+      }
+      continue;
+    }
+    modif_arr.push_back((log.modified_fields_[i] || !is_equal));
+    modif_val.push_back(old_val);
+    modif_schema.push_back(schema->GetColumn(i));
+  }
+  Schema schema_(modif_schema);
+  return UndoLog{false,modif_arr,Tuple(modif_val,&schema_),log.ts_,log.prev_version_};
+
+
+
+
+
+
   UNIMPLEMENTED("not implemented");
 }
+
+
+auto GetUnlogTuple(const  Schema schema, const UndoLog & log) -> Tuple {
+      std::vector<Value> tuple_val;
+      size_t pos = 0;
+      for(size_t i = 0;i < schema.GetColumnCount();i++){
+        if(log.modified_fields_[i]){
+          tuple_val.push_back(log.tuple_.GetValue(&schema,pos++));
+          continue;
+        }
+        tuple_val.push_back(ValueFactory::GetNullValueByType(schema.GetColumn(i).GetType()));
+      }
+      Tuple undologtuple(tuple_val,&schema);
+      return undologtuple;
+}
+
+
+auto GetUnlogSchema(const Schema *schema, const UndoLog & log) ->Schema{
+      std::vector<Value> tuple_val; 
+      std::vector<Column> col;
+      for(size_t i = 0;i < schema->GetColumnCount();i++){
+        if(log.modified_fields_[i]){
+          col.push_back(schema->GetColumn(i));
+          continue;
+        }
+      }
+      return Schema(col);
+}
+
+bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,TransactionManager * txn_mgr){
+  if(tuple_meta.ts_ > TXN_START_ID && tuple_meta.ts_ != txn->GetTransactionId()){
+    txn->SetTainted();
+    throw ExecutionException("this txn is a tianed");
+    return false;
+  }
+  if(tuple_meta.is_deleted_ && txn->GetReadTs() < tuple_meta.ts_){
+    txn->SetTainted();
+    throw ExecutionException("this txn is a tianed");
+    return false;
+  }
+  return true;
+}
+
+
+
+
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
                TableHeap *table_heap) {
   // always use stderr for printing logs...
   fmt::println(stderr, "debug_hook: {}", info);
+  
+  //get the tuple preversion info
+  
+  auto iter = table_heap->MakeEagerIterator();
+  Schema schema_ = table_info->schema_;
+  while(!iter.IsEnd() ){
+    RID tuple_rid = iter.GetRID();
+    auto [tuple_meta,tuple ] = iter.GetTuple();
+    std::cout<< tuple_rid<<"  ts_="<<tuple_meta.ts_;
+    std::cout<< " Tuple="<<tuple.ToString(&table_info->schema_)<<"  deleted:"<<tuple_meta.is_deleted_<<std::endl;
+    //find the undolink and go the undolog 
+    //since we get the undolink then we need to get the undolog
+    auto link = txn_mgr->GetUndoLink(tuple_rid);
+    if(!link.has_value()){
+      ++iter;
+      continue;
+    }
+    UndoLink link_ = link.value();
+    while(link_.IsValid()){
+      auto log_ = txn_mgr->GetUndoLog(link_);
+      auto unlogtuple  = GetUnlogTuple(schema_,log_);
+      std::cout<<"   txn"<<(link_.prev_txn_^TXN_START_ID)<<"@"<<link_.prev_log_idx_<<"  ts="<<log_.ts_<<"   "<<unlogtuple.ToString(&schema_)<<"  deleted:"<<log_.is_deleted_<<std::endl;
+      link_ = log_.prev_version_;
+    }
+    ++iter;
+  }
 
+  // how to debug the hook
+  
   fmt::println(
       stderr,
       "You see this line of text because you have not implemented `TxnMgrDbg`. You should do this once you have "

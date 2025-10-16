@@ -63,13 +63,42 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
   RID child_rid;
   int32_t deleted_count = 0;
+  auto txn_mgr = exec_ctx_->GetTransactionManager();
+  auto txn = exec_ctx_->GetTransaction();
+  const Schema &schema = plan_->OutputSchema();
   while(child_executor_->Next(&child_tuple, &child_rid)){
     auto [delete_meta, delete_tuple] = table_info_->table_->GetTuple(child_rid);
+    if(!check_double_write_conflict(txn,delete_meta,txn_mgr)){
+      return false;
+    }
     if(delete_meta.is_deleted_){
       continue;
     }
+    txn->AppendWriteSet(table_info_->oid_,child_rid);
+    // first of all generate a undolog and a undolink 
+    auto  link  = txn_mgr->GetUndoLink(child_rid);
+    if(!link.has_value()){
+      // which means the tuple don't have any a undolog
+      // which means this tuple don't have a link  so we need to construct a undolog for this tuple
+      auto unlog = GenerateNewUndoLog(&schema,&child_tuple,nullptr,delete_meta.ts_,{});
+      auto unlink = txn->AppendUndoLog(unlog);
+      txn_mgr->UpdateUndoLink(child_rid,unlink,nullptr);
+      delete_meta.is_deleted_ = true;
+      delete_meta.ts_ = txn->GetTransactionId();
+      table_info_->table_->UpdateTupleMeta(delete_meta, child_rid);
+      continue;
+    }
+    UndoLink link_ = link.value();
+    // we get the link but if the undolog is already in the txn then we just need to update it 
+    // so first of all we need to check if we have already get the 
+    auto unlog = GenerateNewUndoLog(&schema,&child_tuple,nullptr,txn->GetCommitTs(),link_);
+    auto unlink = txn->AppendUndoLog(unlog);
+    txn_mgr->UpdateUndoLink(child_rid,unlink,nullptr);
+    //
     delete_meta.is_deleted_ = true;
+    delete_meta.ts_ = txn->GetTransactionId();
     table_info_->table_->UpdateTupleMeta(delete_meta, child_rid);
+    
     for(auto &index : index_info){
       // 
       auto const & delete_tuple_ = child_tuple.KeyFromTuple(table_info_->schema_, index->key_schema_, index->index_->GetKeyAttrs());
@@ -77,7 +106,6 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     }
     deleted_count++;
   }
-  const Schema &schema = plan_->OutputSchema();
   std::vector<Value> values;
   values.push_back(Value(TypeId::INTEGER, deleted_count));
   *tuple = Tuple(values,&schema);

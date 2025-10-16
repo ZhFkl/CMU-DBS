@@ -65,9 +65,13 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   TupleMeta meta;
   meta.is_deleted_ = false;
   meta.ts_  = exec_ctx_->GetTransaction()->GetTransactionId();
+  auto txn = exec_ctx_->GetTransaction();
   int32_t inserted_count = 0;
   while (child_executor_->Next(&child_tuple, &child_rid)) {
+    
     auto inserted_rid = table_info->table_->InsertTuple(meta,child_tuple,exec_ctx_->GetLockManager(), exec_ctx_->GetTransaction(), table_info->oid_);
+    // after insert the tuple i need to add the txn_id and the rid to the txn
+  
     for(auto &index :index_info){
       // updata the index is failed
       //index is only have one column so  we need to get the key from the tuple
@@ -78,6 +82,7 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     if (!inserted_rid.has_value()) {
       throw Exception("Failed to insert tuple: no space left in the table.");
     }
+    txn->AppendWriteSet(table_info->oid_,inserted_rid.value());
     inserted_count++;
   }
   const Schema &schema = plan_->OutputSchema();

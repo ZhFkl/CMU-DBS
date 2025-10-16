@@ -66,7 +66,8 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   std::unique_lock<std::mutex> commit_lck(commit_mutex_);
 
   // TODO(fall2023): acquire commit ts!
-  
+  timestamp_t commit_ts = last_commit_ts_.load() + 1;
+
   if (txn->state_ != TransactionState::RUNNING) {
     throw Exception("txn not in running state");
   }
@@ -80,7 +81,23 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   }
 
   // TODO(fall2023): Implement the commit logic!
-
+  auto write_set = txn->GetWriteSets();
+  // modified the tuple meta
+  // throw the tupleheap get the tuple meta and modified it to the commit time;
+  for(auto &pair:write_set){
+    table_oid_t oid = pair.first;
+    auto rids = pair.second;
+    auto info = catalog_->GetTable(oid);
+    for(auto &rid : rids){
+      TupleMeta meta{commit_ts,false};
+      // if the tuple is deleted then we don't need to modified it to true
+      auto meta_ = info->table_->GetTupleMeta(rid);
+      if(meta_.is_deleted_){
+        meta.is_deleted_ = true;
+      }
+      info->table_->UpdateTupleMeta(meta,rid);
+    }
+  }
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
 
   // TODO(fall2023): set commit timestamp + update last committed timestamp here.

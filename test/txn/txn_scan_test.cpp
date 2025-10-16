@@ -312,6 +312,10 @@ TEST(TxnScanTest, CollectUndoLogTest) {  // NOLINT
     ASSERT_TRUE(tuple.has_value());
     VerifyTuple(schema.get(), *tuple, {Int(1), Double(1.0), BoolNull()});
   }
+  {
+    std::string info("test the function of the dbg");
+    TxnMgrDbg(info,bustub->txn_manager_.get(),table_info.get(),table_info->table_.get());
+  }
 }
 
 TEST(TxnScanTest,ScanTest) {  // NOLINT

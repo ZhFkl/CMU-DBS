@@ -21,6 +21,7 @@
 #include "catalog/schema.h"
 #include "concurrency/transaction.h"
 #include "storage/table/tuple.h"
+#include "storage/table/table_iterator.h"
 
 namespace bustub {
 
@@ -60,7 +61,9 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
                TableHeap *table_heap);
-
+auto GetUnlogSchema(const Schema *schema, const UndoLog & log) ->Schema;
+auto GetUnlogTuple(const  Schema schema, const UndoLog & log) -> Tuple;
+bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,TransactionManager * txn_mgr);
 
 // TODO(P4): Add new functions as needed... You are likely need to define some more functions.
 //
