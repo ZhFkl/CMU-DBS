@@ -87,6 +87,11 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
     }
     for(auto log : undo_logs){
       // roll back 
+      if(log.ts_ == INVALID_TS){
+        is_delete = true;
+        break;
+      }
+      
       std::vector<Column> unlog_schema;
       for(size_t i = 0; i < schema->GetColumnCount();i++){
         if(log.modified_fields_[i]){
@@ -107,13 +112,23 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
       }
       is_delete = log.is_deleted_;
     }
+    
     if(is_delete){
       return std::nullopt;
     }
-    return Tuple(tuple_val,schema);
-
-
-  
+    bool insert_roll_back = true;
+    for(auto const &val: tuple_val){
+      if(!val.IsNull()){
+        insert_roll_back = false;
+        break;
+      }
+    }
+    if(insert_roll_back){
+      return std::nullopt;
+    }
+    Tuple undo_tuple(tuple_val,schema);
+    undo_tuple.SetRid(base_tuple.GetRid());
+    return undo_tuple;  
 }
 
 /**
@@ -197,6 +212,17 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
 std::vector<Value> modif_val;
 std::vector<bool> modif_arr;
 std::vector<Column> modif_schema;
+if(base_tuple == nullptr){
+  // if  the base tuple is
+  //which means  the tuple is inserted the first time 
+  modif_arr.resize(schema->GetColumnCount(),true);
+  for(size_t i = 0;i < schema->GetColumnCount();i++){
+    modif_val.push_back(ValueFactory::GetNullValueByType(schema->GetColumn(i).GetType()));
+  }
+  Tuple undo_tuple(modif_val,schema);
+  undo_tuple.SetRid(target_tuple->GetRid());
+  return UndoLog{false,modif_arr,undo_tuple,ts,{}};
+}
 if(target_tuple == nullptr){
   modif_arr.resize(schema->GetColumnCount(),true);
   return UndoLog{false,modif_arr,*base_tuple,ts,prev_version};
@@ -213,7 +239,9 @@ for(size_t i = 0; i < schema->GetColumnCount();i++){
   modif_schema.push_back(schema->GetColumn(i));
 }
 Schema schema_(modif_schema);
-return UndoLog{false,modif_arr,Tuple(modif_val,&schema_),ts,prev_version};
+Tuple undo_tuple(modif_val,&schema_);
+undo_tuple.SetRid(base_tuple->GetRid());
+return UndoLog{false,modif_arr,undo_tuple,ts,prev_version};
 
 
 
@@ -232,38 +260,39 @@ return UndoLog{false,modif_arr,Tuple(modif_val,&schema_),ts,prev_version};
  */
 auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const Tuple *target_tuple,
                             const UndoLog &log) -> UndoLog {
+  if(base_tuple == nullptr || target_tuple == nullptr){
+    return log;
+  }
   if(IsTupleContentEqual(*base_tuple,*target_tuple)){
     return log;
   }
+  
   //not only compare the 
   std::vector<Value> modif_val;
   std::vector<bool> modif_arr;
   std::vector<Column> modif_schema;
   auto log_schema = GetUnlogSchema(schema,log);
+  size_t pos = 0;
   for(size_t i = 0 ; i < schema->GetColumnCount();i++){
-    bool is_equal = false;
-    auto old_val = base_tuple->GetValue(schema,i);
-    auto new_val = target_tuple->GetValue(schema,i);
-    if((is_equal = new_val.CompareExactlyEquals(old_val))){
-      modif_arr.push_back((log.modified_fields_[i] || !is_equal));
-      if(log.modified_fields_[i]){
-        modif_val.push_back(log.tuple_.GetValue(&log_schema,i));
-        modif_schema.push_back(schema->GetColumn(i));
-      }
+    if(log.modified_fields_[i]){
+      modif_arr.push_back(true);
+      modif_val.push_back(log.tuple_.GetValue(&log_schema,pos++));
+      modif_schema.push_back(schema->GetColumn(i));
       continue;
     }
-    modif_arr.push_back((log.modified_fields_[i] || !is_equal));
+    auto old_val = base_tuple->GetValue(schema,i);
+    auto new_val = target_tuple->GetValue(schema,i);
+    if(old_val.CompareExactlyEquals(new_val)){
+      modif_arr.push_back(false);
+      continue;
+    }
+    modif_arr.push_back(true);
     modif_val.push_back(old_val);
     modif_schema.push_back(schema->GetColumn(i));
+
   }
   Schema schema_(modif_schema);
   return UndoLog{false,modif_arr,Tuple(modif_val,&schema_),log.ts_,log.prev_version_};
-
-
-
-
-
-
   UNIMPLEMENTED("not implemented");
 }
 
@@ -279,6 +308,7 @@ auto GetUnlogTuple(const  Schema schema, const UndoLog & log) -> Tuple {
         tuple_val.push_back(ValueFactory::GetNullValueByType(schema.GetColumn(i).GetType()));
       }
       Tuple undologtuple(tuple_val,&schema);
+      undologtuple.SetRid(log.tuple_.GetRid());
       return undologtuple;
 }
 
