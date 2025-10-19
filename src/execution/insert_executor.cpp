@@ -14,7 +14,6 @@
 #include "common/macros.h"
 
 #include "execution/executors/insert_executor.h"
-
 namespace bustub {
 
 /**
@@ -43,6 +42,8 @@ void InsertExecutor::Init() {
     throw Exception("Table to be inserted does not exist");
   }
   child_executor_->Init();
+  txn = exec_ctx_->GetTransaction();
+  txn_mgr = exec_ctx_->GetTransactionManager();
   return;
   UNIMPLEMENTED("TODO(P3): Add implementation."); }
 
@@ -64,13 +65,11 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   RID child_rid;
   TupleMeta meta;
   meta.is_deleted_ = false;
-  meta.ts_  = exec_ctx_->GetTransaction()->GetTransactionId();
-  auto txn = exec_ctx_->GetTransaction();
+  meta.ts_  = txn->GetTransactionId();
   int32_t inserted_count = 0;
   while (child_executor_->Next(&child_tuple, &child_rid)) {
     
     auto inserted_rid = table_info->table_->InsertTuple(meta,child_tuple,exec_ctx_->GetLockManager(), exec_ctx_->GetTransaction(), table_info->oid_);
-    // after insert the tuple i need to add the txn_id and the rid to the txn
   
     for(auto &index :index_info){
       // updata the index is failed
@@ -82,7 +81,17 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     if (!inserted_rid.has_value()) {
       throw Exception("Failed to insert tuple: no space left in the table.");
     }
+    // after insert the tuple i need to add the txn_id and the rid to the txn
     txn->AppendWriteSet(table_info->oid_,inserted_rid.value());
+    txn->SetState(inserted_rid.value(),STATE::INSERT);
+    // add a undolog to the txn
+    auto undolog = GenerateNewUndoLog(&table_info->schema_,nullptr,&child_tuple,txn->GetReadTs(),{});
+    auto undolink = txn->AppendUndoLog(undolog);
+    bool succeed = UpdateTupleAndUndoLink(txn_mgr,inserted_rid.value(),undolink,table_info->table_.get(),txn,meta,child_tuple,
+      nullptr);// the check function is nullptr
+    if(!succeed){
+      throw std::runtime_error("the tuple wasn't insert success\n");
+    }
     inserted_count++;
   }
   const Schema &schema = plan_->OutputSchema();

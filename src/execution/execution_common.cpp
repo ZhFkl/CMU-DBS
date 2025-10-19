@@ -80,56 +80,34 @@ auto GenerateSortKey(const Tuple &tuple, const std::vector<OrderBy> &order_bys, 
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
     // first of all check out 
-    std::vector<Value> tuple_val;
     bool is_delete = base_meta.is_deleted_;
-    for(size_t i = 0 ; i < schema->GetColumnCount();i++){
-      tuple_val.push_back(base_tuple.GetValue(schema,i));
+    Tuple tuple_ = base_tuple; 
+    if(undo_logs.empty()){
+      throw std::runtime_error("in reconstructTuple the undolog is empty is wrong\n");
     }
     for(auto log : undo_logs){
-      // roll back 
-      if(log.ts_ == INVALID_TS){
-        is_delete = true;
-        break;
-      }
-      
-      std::vector<Column> unlog_schema;
-      for(size_t i = 0; i < schema->GetColumnCount();i++){
-        if(log.modified_fields_[i]){
-          // which means the data is changed so we need to get the scheam
-          unlog_schema.push_back(schema->GetColumn(i));
-        }
-      }
-      Schema unlog_schema_(unlog_schema);
-      // since we have the schema then we need to update the value
-      // if a data is deleted then we just roll back ?
-
-      // updata the data of the tuple 
-      uint32_t pos = 0;
-      for(size_t i = 0; i< schema->GetColumnCount();i++){
-        if(log.modified_fields_[i]){
-          tuple_val[i] = log.tuple_.GetValue(&unlog_schema_,pos++);
-        }
-      }
       is_delete = log.is_deleted_;
+      tuple_ = GetUnlogTuple(*schema,&tuple_,log); 
     }
-    
-    if(is_delete){
+    if(is_delete || !IsnotNull(schema,tuple_)){
       return std::nullopt;
     }
-    bool insert_roll_back = true;
-    for(auto const &val: tuple_val){
-      if(!val.IsNull()){
-        insert_roll_back = false;
-        break;
-      }
-    }
-    if(insert_roll_back){
-      return std::nullopt;
-    }
-    Tuple undo_tuple(tuple_val,schema);
-    undo_tuple.SetRid(base_tuple.GetRid());
-    return undo_tuple;  
+    // if the base_value is null value then we return nullopt;
+    return tuple_;
 }
+
+
+auto IsnotNull(const Schema* schema, const Tuple tuple) ->bool{
+  bool IsnotNull = false;
+  for(size_t i = 0; i< schema->GetColumnCount();i++){
+    if(!tuple.GetValue(schema,i).IsNull()){
+      IsnotNull = true;
+      break;
+    }
+  }
+  return IsnotNull;
+}
+
 
 /**
  * @brief Collects the undo logs sufficient to reconstruct the tuple w.r.t. the txn.
@@ -150,44 +128,45 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
   
   //check if the base_meta is modifing but not commit
   std::vector<UndoLog> logs;
-  // i need to judge if the tuple has been modified but not commit
-  // if it is this kind of condition we need to check if it was modified by this txn if it is , then we can see it 
-  // else we can't see if we , we need to roll back 
-  if(base_meta.ts_  <= txn->GetReadTs() || base_meta.ts_ == txn->GetTransactionId()){
-    // if the metats is smaller than the readts ,which means the tuple don't need to roll back 
-    // else we need to roll back to find the lateset commit unlog array
-    // else if the meta is modified by the txn then we can see it else we can't see is 
-    // which means the commit_ts is smaller than my read so  we don't need to retrive 
-    // the data of the tuple, we just return the base_meta;
-    return logs;
+  // first conditoin : the transaction is being modifing 
+  if(base_meta.ts_ > TXN_START_ID ){
+    // the tuple is modified by the txn
+    if(base_meta.ts_ == txn->GetTransactionId()){
+      return std::nullopt;
+    }
+    // the tuple was not modified by this txn
+    // first roll back to the state before the modifing 
+       auto link = txn_mgr->GetUndoLink(rid);
+       auto undolog = txn_mgr->GetUndoLog(link.value());
+       logs.push_back(undolog);
+       UndoLink link_ = undolog.prev_version_;
+       while(link_.IsValid()){
+          auto undolog_ = txn_mgr->GetUndoLog(link_);
+          if(undolog.ts_ > txn->GetReadTs()){
+            logs.push_back(undolog_);
+          }else{
+            break;
+          }
+          link_ = undolog.prev_version_;
+       }
   }
-  // which means the ts is larger than my readts
-  if(!undo_link.has_value()){
-    return std::nullopt;
-  }
-  auto map = txn_mgr->txn_map_;
-  UndoLink link= undo_link.value();
-  // the link is the newest link for the tuple
-  while(link.IsValid()){
-    UndoLog log = txn_mgr->GetUndoLog(link);
-    if(log.ts_ <= txn->GetReadTs()){
-      //judge if the 
-      if(!logs.empty()){
-        auto log_ = logs.back();
-        if(log_.ts_ > log.ts_){
+  else{
+      auto link = txn_mgr->GetUndoLink(rid);
+      auto link_ = link.value();
+      while(link_.IsValid()){
+        auto undolog = txn_mgr->GetUndoLog(link_);
+        if(undolog.ts_ > txn->GetReadTs()){
+          logs.push_back(undolog);
+        }else{
           break;
         }
+        link_ = undolog.prev_version_;
       }
-      logs.push_back(log);
-    }
-    // get the link and get the next log
-    link = log.prev_version_;
   }
   if(logs.empty()){
     return std::nullopt;
   }
   return logs;
-
   UNIMPLEMENTED("not implemented");
 }
 
@@ -207,41 +186,41 @@ auto GenerateNewUndoLog(const Schema *schema, const Tuple *base_tuple, const Tup
                         UndoLink prev_version) -> UndoLog {
 
 
-// compare the data that has been modified 
+    // compare the data that has been modified 
 
-std::vector<Value> modif_val;
-std::vector<bool> modif_arr;
-std::vector<Column> modif_schema;
-if(base_tuple == nullptr){
-  // if  the base tuple is
-  //which means  the tuple is inserted the first time 
-  modif_arr.resize(schema->GetColumnCount(),true);
-  for(size_t i = 0;i < schema->GetColumnCount();i++){
-    modif_val.push_back(ValueFactory::GetNullValueByType(schema->GetColumn(i).GetType()));
-  }
-  Tuple undo_tuple(modif_val,schema);
-  undo_tuple.SetRid(target_tuple->GetRid());
-  return UndoLog{false,modif_arr,undo_tuple,ts,{}};
-}
-if(target_tuple == nullptr){
-  modif_arr.resize(schema->GetColumnCount(),true);
-  return UndoLog{false,modif_arr,*base_tuple,ts,prev_version};
-}
-for(size_t i = 0; i < schema->GetColumnCount();i++){
-  auto old_val = base_tuple->GetValue(schema,i);
-  auto new_val = target_tuple->GetValue(schema,i);
-  if(new_val.CompareExactlyEquals(old_val)){
-    modif_arr.push_back(false);
-    continue;
-  }
-  modif_val.push_back(old_val);
-  modif_arr.push_back(true);
-  modif_schema.push_back(schema->GetColumn(i));
-}
-Schema schema_(modif_schema);
-Tuple undo_tuple(modif_val,&schema_);
-undo_tuple.SetRid(base_tuple->GetRid());
-return UndoLog{false,modif_arr,undo_tuple,ts,prev_version};
+    std::vector<Value> modif_val;
+    std::vector<bool> modif_arr;
+    std::vector<Column> modif_schema;
+    if(base_tuple == nullptr){
+      // if  the base tuple is
+      //which means  the tuple is inserted the first time 
+      modif_arr.resize(schema->GetColumnCount(),true);
+      for(size_t i = 0;i < schema->GetColumnCount();i++){
+        modif_val.push_back(ValueFactory::GetNullValueByType(schema->GetColumn(i).GetType()));
+      }
+      Tuple undo_tuple(modif_val,schema);
+      undo_tuple.SetRid(target_tuple->GetRid());
+      return UndoLog{false,modif_arr,undo_tuple,ts,{}};
+    }
+    if(target_tuple == nullptr){
+      modif_arr.resize(schema->GetColumnCount(),true);
+      return UndoLog{false,modif_arr,*base_tuple,ts,prev_version};
+    }
+    for(size_t i = 0; i < schema->GetColumnCount();i++){
+      auto old_val = base_tuple->GetValue(schema,i);
+      auto new_val = target_tuple->GetValue(schema,i);
+      if(new_val.CompareExactlyEquals(old_val)){
+        modif_arr.push_back(false);
+        continue;
+      }
+      modif_val.push_back(old_val);
+      modif_arr.push_back(true);
+      modif_schema.push_back(schema->GetColumn(i));
+    }
+    Schema schema_(modif_schema);
+    Tuple undo_tuple(modif_val,&schema_);
+    undo_tuple.SetRid(base_tuple->GetRid());
+    return UndoLog{false,modif_arr,undo_tuple,ts,prev_version};
 
 
 
@@ -297,7 +276,7 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 }
 
 
-auto GetUnlogTuple(const  Schema schema, const UndoLog & log) -> Tuple {
+auto GetUnlogTuple(const  Schema schema,  Tuple* base_tuple,const UndoLog & log) -> Tuple {
       std::vector<Value> tuple_val;
       size_t pos = 0;
       for(size_t i = 0;i < schema.GetColumnCount();i++){
@@ -305,7 +284,11 @@ auto GetUnlogTuple(const  Schema schema, const UndoLog & log) -> Tuple {
           tuple_val.push_back(log.tuple_.GetValue(&schema,pos++));
           continue;
         }
-        tuple_val.push_back(ValueFactory::GetNullValueByType(schema.GetColumn(i).GetType()));
+        if(base_tuple == nullptr){
+          tuple_val.push_back(ValueFactory::GetNullValueByType(schema.GetColumn(i).GetType()));
+        }else{
+          tuple_val.push_back(base_tuple->GetValue(&schema,i));
+        }
       }
       Tuple undologtuple(tuple_val,&schema);
       undologtuple.SetRid(log.tuple_.GetRid());
@@ -367,7 +350,7 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
     UndoLink link_ = link.value();
     while(link_.IsValid()){
       auto log_ = txn_mgr->GetUndoLog(link_);
-      auto unlogtuple  = GetUnlogTuple(schema_,log_);
+      auto unlogtuple  = GetUnlogTuple(schema_,nullptr,log_);
       std::cout<<"   txn"<<(link_.prev_txn_^TXN_START_ID)<<"@"<<link_.prev_log_idx_<<"  ts="<<log_.ts_<<"   "<<unlogtuple.ToString(&schema_)<<"  deleted:"<<log_.is_deleted_<<std::endl;
       link_ = log_.prev_version_;
     }
@@ -376,10 +359,7 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
 
   // how to debug the hook
   
-  fmt::println(
-      stderr,
-      "You see this line of text because you have not implemented `TxnMgrDbg`. You should do this once you have "
-      "finished task 2. Implementing this helper function will save you a lot of time for debugging in later tasks.");
+
 
   // We recommend implementing this function as traversing the table heap and print the version chain. An example output
   // of our reference solution:

@@ -18,6 +18,9 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/insert_plan.h"
 #include "storage/table/tuple.h"
+#include "execution/execution_common.h"
+#include "concurrency/transaction_manager.h"
+
 
 namespace bustub {
 
@@ -44,6 +47,8 @@ class InsertExecutor : public AbstractExecutor {
   std::unique_ptr<AbstractExecutor> child_executor_;
   bool no_more_tuples = false;
   std::vector<std::shared_ptr<IndexInfo>> index_info;
+  TransactionManager* txn_mgr;
+  Transaction* txn;
 };
 
 }  // namespace bustub

@@ -47,6 +47,7 @@ enum class TransactionState { RUNNING = 0, TAINTED, COMMITTED = 100, ABORTED };
  * Transaction isolation level. READ_UNCOMMITTED will NOT be used in project 3/4 as of Fall 2023.
  */
 enum class IsolationLevel { READ_UNCOMMITTED, SNAPSHOT_ISOLATION, SERIALIZABLE };
+enum class STATE{ UPDATE = 0 , INSERT = 1, DELETE = 2};
 
 class TableHeap;
 class Catalog;
@@ -120,10 +121,10 @@ class Transaction {
   inline auto GetCommitTs() const -> timestamp_t { return commit_ts_; }
 
   /** Modify an existing undo log. */
-inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
-    std::scoped_lock<std::mutex> lck(latch_);
-    undo_logs_[log_idx] = std::move(new_log);
-  }
+  inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
+      std::scoped_lock<std::mutex> lck(latch_);
+      undo_logs_[log_idx] = std::move(new_log);
+    }
 
   /** @return the index of the undo log in this transaction */
   inline auto AppendUndoLog(UndoLog log) -> UndoLink {
@@ -136,6 +137,11 @@ inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
     std::scoped_lock<std::mutex> lck(latch_);
     write_set_[t].insert(rid);
   }
+
+  inline auto IsModified(table_oid_t t, RID rid) ->bool{
+    return (write_set_[t].find(rid) != write_set_[t].end());
+  }
+
 
   inline auto GetWriteSets() -> const std::unordered_map<table_oid_t, std::unordered_set<RID>> & { return write_set_; }
 
@@ -152,7 +158,7 @@ inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
     std::scoped_lock<std::mutex> lck(latch_);
     return undo_logs_[log_id];
   }
-
+  
   inline auto GetUndoLogNum() -> size_t {
     std::scoped_lock<std::mutex> lck(latch_);
     return undo_logs_.size();
@@ -163,6 +169,30 @@ inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
   inline auto ClearUndoLog() -> size_t {
     std::scoped_lock<std::mutex> lck(latch_);
     return undo_logs_.size();
+  }
+
+  inline auto SetState(const RID rid, STATE state) ->void {
+    std::scoped_lock<std::mutex> lck(latch_);
+    modifystate[rid] = state;
+  }
+
+
+  inline auto DeleteUndolog(size_t offset){
+    if(offset >= undo_logs_.size()){
+      throw std::runtime_error("can't delete the undolog because overflow\n");
+    }
+    undo_logs_.erase(undo_logs_.begin() + offset);
+  }
+
+
+  inline auto UpdateUndolog(size_t log_idx,UndoLog &undolog){
+    undo_logs_[log_idx] = undolog;
+  }
+
+
+
+  inline auto IsInsert(const RID rid) ->bool{
+    return (modifystate[rid] == STATE::INSERT);
   }
 
   void SetTainted();
@@ -192,6 +222,9 @@ inline auto ModifyUndoLog(int log_idx, UndoLog new_log) {
 
   /** stores the RID of write tuples */
   std::unordered_map<table_oid_t, std::unordered_set<RID>> write_set_;
+
+  // to track the modifying state of the corresponding rid 
+  std::unordered_map<RID,STATE> modifystate;
   /** store all scan predicates */
   std::unordered_map<table_oid_t, std::vector<AbstractExpressionRef>> scan_predicates_;
 

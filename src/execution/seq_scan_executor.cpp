@@ -31,7 +31,7 @@ void SeqScanExecutor::Init() {
   table_info_  = catalog->GetTable(oid);
   BUSTUB_ASSERT(table_info_ != nullptr, "Table not found in catalog");
   iter_ = table_info_->table_->MakeIterator();
-  
+  txn_mgr = exec_ctx_->GetTransactionManager();
    //UNIMPLEMENTED("TODO(P3): Add implementation."); 
   }
 
@@ -42,46 +42,42 @@ void SeqScanExecutor::Init() {
  * @return `true` if a tuple was produced, `false` if there are no more tuples
  */
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
-    // judge if the iterator is end
-    if(iter_->IsEnd()){
-      return false;
-    }
     //through a loop to find the next valid tuple
-    TransactionManager* txn_mgr = exec_ctx_->GetTransactionManager();
     while(!iter_->IsEnd()){ 
       auto [meta, cur_tuple] = (*iter_).GetTuple();
       RID tuple_rid = cur_tuple.GetRid();
       auto undolink = txn_mgr->GetUndoLink(tuple_rid);
       Transaction* txn = exec_ctx_->GetTransaction();
       auto undologs = CollectUndoLogs(cur_tuple.GetRid(),meta,cur_tuple,undolink,txn,txn_mgr);
+      Tuple cur_tuple_;
       //first we need to reconstruct the tuple
       if(!undologs.has_value()){
-        ++(*iter_);
-        continue;
-      }
-      auto tuple_ = ReconstructTuple(&plan_->OutputSchema(),cur_tuple,meta,undologs.value());  
-      if(!tuple_.has_value()){
-        ++(*iter_);
-        continue;
+        if(meta.is_deleted_){
+          ++(*iter_);
+          continue;
+        }
+        cur_tuple_ = cur_tuple;
+      }else{
+        auto tuple_ = ReconstructTuple(&plan_->OutputSchema(),cur_tuple,meta,undologs.value());  
+        if(!tuple_.has_value()){
+          ++(*iter_);
+          continue;
+        }
       }    
-      Tuple cur_tuple_ = tuple_.value();
       AbstractExpressionRef predicate = plan_->filter_predicate_;
       bool is_match = false;
-      if(predicate != nullptr){
-          Value val = predicate->Evaluate(&cur_tuple_, table_info_->schema_);
-          is_match = val.GetAs<bool>();
-      }else{
-          is_match = true;
-      }
-      
-      if(is_match){
-          *tuple = cur_tuple_;
-          *rid = tuple_rid;
-          ++(*iter_);
-          return true;
-      }
+        if(predicate != nullptr){
+            Value val = predicate->Evaluate(&cur_tuple_, table_info_->schema_);
+            is_match = val.GetAs<bool>();
+        }else{ is_match = true;}
 
-      
+        if(is_match){
+            *tuple = cur_tuple_;
+            *rid = tuple_rid;
+            ++(*iter_);
+            return true;
+        }
+
       ++(*iter_);
     }
     return false;

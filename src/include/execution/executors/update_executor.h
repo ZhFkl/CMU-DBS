@@ -18,7 +18,8 @@
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/update_plan.h"
 #include "storage/table/tuple.h"
-
+#include "concurrency/transaction_manager.h"
+#include "execution/execution_common.h"
 namespace bustub {
 
 /**
@@ -48,6 +49,8 @@ class UpdateExecutor : public AbstractExecutor {
   std::vector<std::shared_ptr<IndexInfo>> index_info;
   /** The child executor to obtain value from */
   std::unique_ptr<AbstractExecutor> child_executor_;
+  Transaction *txn_;
+  TransactionManager *txn_mgr;
   bool no_more_tuples = false;
 };
 }  // namespace bustub

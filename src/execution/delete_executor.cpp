@@ -41,7 +41,8 @@ void DeleteExecutor::Init() {
     throw Exception("Table to be deleted does not exist");
   }
   child_executor_->Init();
-  
+  txn = exec_ctx_->GetTransaction();
+  txn_mgr = exec_ctx_->GetTransactionManager();
   
   
   return;
@@ -63,8 +64,6 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
   RID child_rid;
   int32_t deleted_count = 0;
-  auto txn_mgr = exec_ctx_->GetTransactionManager();
-  auto txn = exec_ctx_->GetTransaction();
   const Schema &schema = plan_->OutputSchema();
   while(child_executor_->Next(&child_tuple, &child_rid)){
     auto [delete_meta, delete_tuple] = table_info_->table_->GetTuple(child_rid);
@@ -74,27 +73,34 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     if(delete_meta.is_deleted_){
       continue;
     }
-    txn->AppendWriteSet(table_info_->oid_,child_rid);
-    // first of all generate a undolog and a undolink 
-    auto  link  = txn_mgr->GetUndoLink(child_rid);
-    if(!link.has_value()){
-      // which means the tuple don't have any a undolog
-      // which means this tuple don't have a link  so we need to construct a undolog for this tuple
-      auto unlog = GenerateNewUndoLog(&schema,&child_tuple,nullptr,delete_meta.ts_,{});
-      auto unlink = txn->AppendUndoLog(unlog);
-      txn_mgr->UpdateUndoLink(child_rid,unlink,nullptr);
-      delete_meta.is_deleted_ = true;
-      delete_meta.ts_ = txn->GetTransactionId();
-      table_info_->table_->UpdateTupleMeta(delete_meta, child_rid);
-      continue;
+    // first check if we have modified the rid/tuple in this txn 
+    // if we have then we need to delete the undolog  
+    if(txn->IsModified(table_info_->oid_,child_rid)){
+      //which means the rid is already modifing 
+      // if it's a insert state which means we need to delete the undolog 
+      //else if it's a update state which means we don't need 
+      auto undolink = txn_mgr->GetUndoLink(child_rid);
+      if(txn->IsInsert(child_rid)){
+        // then delete should delete the undolog
+        txn->DeleteUndolog(undolink.value().prev_log_idx_);
+        // then update the link
+        txn_mgr->UpdateUndoLink(child_rid,{});
+      }else{
+      // if not a insert then it's a update state
+      auto undolog = txn_mgr->GetUndoLog(undolink.value());
+      auto updateundolog = GenerateUpdatedUndoLog(&table_info_->schema_,&child_tuple,nullptr,undolog);
+      txn->UpdateUndolog(undolink.value().prev_log_idx_,updateundolog);
+      }
+    }else{
+        // which means the tuple hasn't been modified 
+        auto undolink = txn_mgr->GetUndoLink(child_rid);
+        auto undolog = GenerateNewUndoLog(&table_info_->schema_,&child_tuple,nullptr,txn->GetReadTs(),undolink.value());
+        auto new_undolink = txn->AppendUndoLog(undolog);
+        txn_mgr->UpdateUndoLink(child_rid,new_undolink);
+        txn->AppendWriteSet(table_info_->oid_,child_rid);
+        txn->SetState(child_rid,STATE::DELETE);
     }
-    UndoLink link_ = link.value();
-    // we get the link but if the undolog is already in the txn then we just need to update it 
-    // so first of all we need to check if we have already get the 
-    auto unlog = GenerateNewUndoLog(&schema,&child_tuple,nullptr,txn->GetCommitTs(),link_);
-    auto unlink = txn->AppendUndoLog(unlog);
-    txn_mgr->UpdateUndoLink(child_rid,unlink,nullptr);
-    //
+    // if not modifed just delete then we need to 
     delete_meta.is_deleted_ = true;
     delete_meta.ts_ = txn->GetTransactionId();
     table_info_->table_->UpdateTupleMeta(delete_meta, child_rid);

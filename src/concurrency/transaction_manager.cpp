@@ -89,13 +89,21 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
     auto rids = pair.second;
     auto info = catalog_->GetTable(oid);
     for(auto &rid : rids){
-      TupleMeta meta{commit_ts,false};
-      // if the tuple is deleted then we don't need to modified it to true
-      auto meta_ = info->table_->GetTupleMeta(rid);
-      if(meta_.is_deleted_){
-        meta.is_deleted_ = true;
+      auto [tuple_meta,tuple,undolink] = GetTupleAndUndoLink(this,info->table_.get(),rid);
+      tuple_meta.ts_ = commit_ts;
+      if(!undolink.has_value()){
+        printf("In the commit function we don't have the undolink\n");
+        continue;
       }
-      info->table_->UpdateTupleMeta(meta,rid);
+      auto undolog = this->GetUndoLog(undolink.value());
+      undolog.ts_ = commit_ts;
+      txn->UpdateUndolog(undolink.value().prev_log_idx_,undolog);
+      if(!UpdateTupleAndUndoLink(this,rid,undolink,info->table_.get(),txn,tuple_meta,tuple)){
+        throw std::runtime_error("in commit function can't update the tuple and the tuple meta");
+      }
+      // we should in there to append our undolog
+      
+
     }
   }
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);

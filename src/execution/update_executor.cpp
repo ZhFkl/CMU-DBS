@@ -39,7 +39,8 @@ void UpdateExecutor::Init() {
     throw Exception("Table to be updated does not exist");
   }
   child_executor_->Init();
-
+  txn_ = exec_ctx_->GetTransaction();
+  txn_mgr = exec_ctx_->GetTransactionManager();
   return;
   
   UNIMPLEMENTED("TODO(P3): Add implementation."); }
@@ -57,19 +58,17 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   if(no_more_tuples){
     return false;
   }
+
+  // in this function i use a 
   Tuple child_tuple;
   RID child_rid;
   int32_t updated_count = 0;
-  TupleMeta insert_meta;
-  insert_meta.is_deleted_ = false;
-  insert_meta.ts_ = 0;
+  TupleMeta update_meta;
   const Schema &table_schema = table_info_->schema_;
   const auto &exprssions = plan_->target_expressions_;
-
   while(child_executor_->Next(&child_tuple,&child_rid)){
     //delte the old tuple
     auto [old_meta,old_tuple] = table_info_->table_->GetTuple(child_rid);
-
     std::vector<Value> values;
     for(uint32_t i = 0; i < table_schema.GetColumnCount();i++){
       // get the new value
@@ -77,20 +76,40 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       Value new_value = expr->Evaluate(&old_tuple,table_schema);
       values.push_back(new_value); 
     }
+    update_meta.is_deleted_ = old_meta.is_deleted_;
+    update_meta.ts_ = txn_->GetTransactionId();
     Tuple new_tuple(values,&table_schema);
-    old_meta.is_deleted_ = true;
-    table_info_->table_->UpdateTupleMeta(old_meta,child_rid);
-    //this might be wrong because we need to insert it at the same place
-    auto inserted_rid = table_info_->table_->InsertTuple(insert_meta,new_tuple,exec_ctx_->GetLockManager(), exec_ctx_->GetTransaction(), table_info_->oid_);
-    if(!inserted_rid.has_value()){
-      throw Exception("Failed to insert tuple: no space left in the table.");
-    }
+    new_tuple.SetRid(child_rid);
+    table_info_->table_->UpdateTupleInPlace(update_meta,new_tuple,child_rid,nullptr);
+    if(txn_->IsModified(table_info_->oid_,child_rid)){
+      auto undolink = txn_mgr->GetUndoLink(child_rid);
+        // we don't need to update the state
+        auto undolog = txn_mgr->GetUndoLog(undolink.value());
+        auto updateundolog = GenerateUpdatedUndoLog(&table_schema,&old_tuple,&new_tuple,undolog);
+        txn_->UpdateUndolog(undolink.value().prev_log_idx_,updateundolog);
+        if(!txn_->IsInsert(child_rid)){
+          txn_->SetState(child_rid,STATE::UPDATE);
+        }
+      }else{
+        // which means the it's not been modified then we need to add a undolog
+        auto undolink = txn_mgr->GetUndoLink(child_rid);
+        auto undolog = GenerateNewUndoLog(&table_schema,&old_tuple,&new_tuple,txn_->GetReadTs(),undolink.value());
+        auto new_undolink = txn_->AppendUndoLog(undolog);
+        txn_mgr->UpdateUndoLink(child_rid,new_undolink);
+        txn_->AppendWriteSet(table_info_->oid_,child_rid);
+        txn_->SetState(child_rid,STATE::UPDATE);
+      }
     for(auto& index : index_info){
+      // the index need to be updated but 
+      // we need to delete the old tuple and insert the new tuple 
+      // and the child_rid is the same because we update not delete and insert a new
+      // one 
       const auto delete_tuple = old_tuple.KeyFromTuple(table_schema, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
       const auto insert_tuple = new_tuple.KeyFromTuple(table_schema, *index->index_->GetKeySchema(), index->index_->GetKeyAttrs());
       index->index_->DeleteEntry(delete_tuple,child_rid,exec_ctx_->GetTransaction());
-      
-      index->index_->InsertEntry(insert_tuple,inserted_rid.value(),exec_ctx_->GetTransaction());
+      index->index_->InsertEntry(insert_tuple,child_rid,exec_ctx_->GetTransaction());
+
+
     }
     updated_count++;
 
@@ -104,8 +123,6 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   *tuple = Tuple(values,&schema);
   no_more_tuples = true;
   return true;
-
-
   UNIMPLEMENTED("TODO(P3): Add implementation.");
 }
 
