@@ -69,7 +69,7 @@ auto GetUnlogTuple(const  Schema schema,  Tuple* base_tuple,const UndoLog & log)
 auto IsnotNull(const Schema* schema, const Tuple tuple) ->bool;
 
 
-bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,TransactionManager * txn_mgr);
+bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,TransactionManager * txn_mgrconst, RID tuple_rid,std::vector<uint32_t> modified);
 
 // TODO(P4): Add new functions as needed... You are likely need to define some more functions.
 //

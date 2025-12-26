@@ -29,6 +29,7 @@
 #include "recovery/log_manager.h"
 #include "storage/table/table_heap.h"
 #include "storage/table/tuple.h"
+#include <set>
 
 namespace bustub {
 /**
@@ -47,6 +48,9 @@ class TransactionManager {
 
   auto UpdateUndoLink(RID rid, std::optional<UndoLink> prev_link,
                       std::function<bool(std::optional<UndoLink>)> &&check = nullptr) -> bool;
+
+
+
 
   auto GetUndoLink(RID rid) -> std::optional<UndoLink>;
 
@@ -72,6 +76,8 @@ class TransactionManager {
      */
     std::unordered_map<slot_offset_t, UndoLink> prev_link_;
   };
+
+  void ProcessPageTuple(PageVersionInfo* info,std::unordered_set<txn_id_t>* txn_set,timestamp_t watermark);
 
   /** protects version info */
   // which is the modified mutex 

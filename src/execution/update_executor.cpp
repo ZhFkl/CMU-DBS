@@ -67,14 +67,22 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   const Schema &table_schema = table_info_->schema_;
   const auto &exprssions = plan_->target_expressions_;
   while(child_executor_->Next(&child_tuple,&child_rid)){
+    std::vector<uint32_t> modified;
     //delte the old tuple
     auto [old_meta,old_tuple] = table_info_->table_->GetTuple(child_rid);
     std::vector<Value> values;
     for(uint32_t i = 0; i < table_schema.GetColumnCount();i++){
       // get the new value
       const auto &expr = exprssions[i];
+      
       Value new_value = expr->Evaluate(&old_tuple,table_schema);
-      values.push_back(new_value); 
+      values.push_back(new_value);
+      if(!new_value.CompareExactlyEquals(old_tuple.GetValue(&table_schema,i))){
+        modified.push_back(i);
+      }
+    }
+    if(!check_double_write_conflict(txn_,old_meta,txn_mgr,child_rid,modified)){
+      return false;
     }
     update_meta.is_deleted_ = old_meta.is_deleted_;
     update_meta.ts_ = txn_->GetTransactionId();

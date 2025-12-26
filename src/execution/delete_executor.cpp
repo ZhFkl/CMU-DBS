@@ -64,10 +64,11 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple child_tuple;
   RID child_rid;
   int32_t deleted_count = 0;
+
   const Schema &schema = plan_->OutputSchema();
   while(child_executor_->Next(&child_tuple, &child_rid)){
     auto [delete_meta, delete_tuple] = table_info_->table_->GetTuple(child_rid);
-    if(!check_double_write_conflict(txn,delete_meta,txn_mgr)){
+    if(!check_double_write_conflict(txn,delete_meta,txn_mgr,child_rid,{})){
       return false;
     }
     if(delete_meta.is_deleted_){

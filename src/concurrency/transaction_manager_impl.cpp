@@ -113,6 +113,40 @@ auto TransactionManager::GetUndoLog(UndoLink link) -> UndoLog {
   throw Exception("undo log not exist");
 }
 
+
+void TransactionManager::ProcessPageTuple(PageVersionInfo* info,std::unordered_set<txn_id_t>* txn_set,timestamp_t watermark)
+
+{
+  // in this function 
+    std::unique_lock<std::shared_mutex> lck(info->mutex_);
+    auto iter = info->prev_link_.begin();
+    while(iter != info->prev_link_.end()){
+      auto link = iter->second;
+      while(link.IsValid()){
+        auto undolog = this->GetUndoLog(link);
+        // find the first undolog which is smaller than the water mark
+        // if it's valid then it can been seen by the txn and all the undolog after
+        // can't be seen 
+        if(undolog.ts_ < watermark ){
+          // we can't break directly because if it's the only undolog  then if we delete
+          // it which means the tuple have null undolog .It's wrong because only tuple deleted don't have any
+          // undolog
+          if(!undolog.prev_version_.IsValid()){
+            txn_set->insert(link.prev_txn_);
+          }
+          break; 
+        }
+        txn_set->insert(link.prev_txn_);
+        link = undolog.prev_version_;
+        // the undolog.ts_ is bigger than the read ts then we need so add it to 
+        // the set
+      }
+      iter++;
+    }
+
+
+}
+
 void Transaction::SetTainted() {
   auto state = state_.load();
   if (state == TransactionState::RUNNING) {
@@ -160,5 +194,8 @@ auto GetTupleAndUndoLink(TransactionManager *txn_mgr, TableHeap *table_heap, RID
   auto undo_link = txn_mgr->GetUndoLink(rid);
   return std::make_tuple(meta, tuple, undo_link);
 }
+
+
+
 
 }  // namespace bustub

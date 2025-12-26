@@ -136,22 +136,28 @@ auto CollectUndoLogs(RID rid, const TupleMeta &base_meta, const Tuple &base_tupl
     }
     // the tuple was not modified by this txn
     // first roll back to the state before the modifing 
-       auto link = txn_mgr->GetUndoLink(rid);
+        auto link = txn_mgr->GetUndoLink(rid);
+      // if a tuple don't have undolog which means it's never exist ;
+      if(!link.has_value()){return std::nullopt;}
+
        auto undolog = txn_mgr->GetUndoLog(link.value());
        logs.push_back(undolog);
        UndoLink link_ = undolog.prev_version_;
        while(link_.IsValid()){
           auto undolog_ = txn_mgr->GetUndoLog(link_);
-          if(undolog.ts_ > txn->GetReadTs()){
+          if(undolog_.ts_ > txn->GetReadTs()){
             logs.push_back(undolog_);
           }else{
             break;
           }
-          link_ = undolog.prev_version_;
+          link_ = undolog_.prev_version_;
        }
   }
   else{
       auto link = txn_mgr->GetUndoLink(rid);
+      // if a tuple don't have undolog which means it's never exist ;
+      if(!link.has_value()){return std::nullopt;}
+
       auto link_ = link.value();
       while(link_.IsValid()){
         auto undolog = txn_mgr->GetUndoLog(link_);
@@ -279,9 +285,10 @@ auto GenerateUpdatedUndoLog(const Schema *schema, const Tuple *base_tuple, const
 auto GetUnlogTuple(const  Schema schema,  Tuple* base_tuple,const UndoLog & log) -> Tuple {
       std::vector<Value> tuple_val;
       size_t pos = 0;
+      auto log_schema = GetUnlogSchema(&schema,log);
       for(size_t i = 0;i < schema.GetColumnCount();i++){
         if(log.modified_fields_[i]){
-          tuple_val.push_back(log.tuple_.GetValue(&schema,pos++));
+          tuple_val.push_back(log.tuple_.GetValue(&log_schema,pos++));
           continue;
         }
         if(base_tuple == nullptr){
@@ -308,8 +315,9 @@ auto GetUnlogSchema(const Schema *schema, const UndoLog & log) ->Schema{
       return Schema(col);
 }
 
-bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,TransactionManager * txn_mgr){
+bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,TransactionManager * txn_mgr,const RID tuple_rid,std::vector<uint32_t> modified){
   if(tuple_meta.ts_ > TXN_START_ID && tuple_meta.ts_ != txn->GetTransactionId()){
+    // the tuple is being modifiying then we can't update this tuple 
     txn->SetTainted();
     throw ExecutionException("this txn is a tianed");
     return false;
@@ -319,7 +327,27 @@ bool check_double_write_conflict(Transaction* txn, TupleMeta tuple_meta,Transact
     throw ExecutionException("this txn is a tianed");
     return false;
   }
+  // third condition if a ,b modified  tuple then a commit, then b commit at this time a  
+  
+  if(tuple_meta.ts_ > txn->GetReadTs() && !modified.empty()){
+    auto link = txn_mgr->GetUndoLink(tuple_rid);
+    auto logs = CollectUndoLogs(tuple_rid,tuple_meta,Tuple::Empty(),link.value(),txn,txn_mgr);
+    if(!logs.has_value()){
+      return true;
+    }
+    for(auto const & log: logs.value()){
+      for(auto const idx : modified){
+        if(log.modified_fields_[idx]){
+            txn->SetTainted();
+            throw ExecutionException("this txn is a tianed");
+            return false;
+        }
+      }
+    }
+  }
+
   return true;
+  
 }
 
 

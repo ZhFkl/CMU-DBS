@@ -63,6 +63,7 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
           ++(*iter_);
           continue;
         }
+        cur_tuple_ = tuple_.value();
       }    
       AbstractExpressionRef predicate = plan_->filter_predicate_;
       bool is_match = false;

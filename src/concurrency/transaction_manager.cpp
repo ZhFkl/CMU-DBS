@@ -92,7 +92,11 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
       auto [tuple_meta,tuple,undolink] = GetTupleAndUndoLink(this,info->table_.get(),rid);
       tuple_meta.ts_ = commit_ts;
       if(!undolink.has_value()){
+        
         printf("In the commit function we don't have the undolink\n");
+        if(!UpdateTupleAndUndoLink(this,rid,std::nullopt,info->table_.get(),txn,tuple_meta,tuple)){
+          throw std::runtime_error("in commit function can't update the tuple and the tuple meta");
+        }
         continue;
       }
       auto undolog = this->GetUndoLog(undolink.value());
@@ -138,8 +142,26 @@ void TransactionManager::Abort(Transaction *txn) {
 /** @brief Stop-the-world garbage collection. Will be called only when all transactions are not accessing the table
  * heap. */
 void TransactionManager::GarbageCollection() {
-  
-  
+  // first get the 
+  std::shared_lock<std::shared_mutex> lck(version_info_mutex_);
+  auto watermark = this->GetWatermark();
+  auto iter = this->version_info_.begin();
+  std::unordered_set<txn_id_t> txn_id_set;
+  while(iter != this->version_info_.end()){
+    std::shared_ptr<PageVersionInfo> pg_ver_info = iter->second;
+    this->ProcessPageTuple(pg_ver_info.get(),&txn_id_set,watermark);
+    iter++;
+  }
+  auto it = this->txn_map_.begin();
+  while(it != this->txn_map_.end()){
+    if(txn_id_set.find(it->first) == txn_id_set.end()){
+      it = this->txn_map_.erase(it);
+    }else{
+      ++it;
+    }
+  }
+
+  return ;
   
   UNIMPLEMENTED("not implemented"); 
 
